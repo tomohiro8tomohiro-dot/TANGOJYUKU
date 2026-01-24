@@ -1566,7 +1566,8 @@ function reviewStorageKey(){ return reviewStorageKeyFor(CURRENT_CSV_HASH); }
       elReviewList.appendChild(row);
     });
 
-    elReviewPanel.style.display = "block";
+    openOverlay(elReviewPanel);
+
   }
 
   function saveReviewPicker() {
