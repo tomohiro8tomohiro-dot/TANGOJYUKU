@@ -499,11 +499,16 @@
         </div>
 
 
+
 <script>
 
 // ===== TTS LOCK (TRUE FIX) =====
 const TTS_LOCK_KEY = "hamaru_tts_lock";
 const TAB_ID = Math.random().toString(36).slice(2);
+// ★追加：前回の音声ロックを強制解除
+localStorage.removeItem("hamaru_tts_lock");
+
+  
 function acquireTtsLock(){
   const owner = localStorage.getItem(TTS_LOCK_KEY);
   if(!owner || owner === TAB_ID){
