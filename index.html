@@ -2040,6 +2040,18 @@ function reviewStorageKey(){ return reviewStorageKeyFor(CURRENT_CSV_HASH); }
     }
 
     const u = new SpeechSynthesisUtterance(text);
+// ✅ 読み上げ完了/失敗で必ずロック解除（超重要）
+u.onend = () => {
+  releaseTtsLock();
+  try { updateTtsHud && updateTtsHud(); } catch(e) {}
+};
+u.onerror = () => {
+  releaseTtsLock();
+  try { updateTtsHud && updateTtsHud(); } catch(e) {}
+};
+
+
+    
     let v = pickVoiceFor(langHint);
     if (!v) {
       const h = (langHint || "").toLowerCase();
@@ -2059,10 +2071,15 @@ function reviewStorageKey(){ return reviewStorageKeyFor(CURRENT_CSV_HASH); }
     u.lang = (v && v.lang) ? v.lang : (langHint || "en-US");
 
     
-    // === TTS LOCK hook ===
-    acquireTtsLock();
-    try{ updateTtsHud && updateTtsHud(); }catch(e){}
-    synth.speak(u);
+   // === TTS LOCK hook ===
+if (!acquireTtsLock()) {
+  try{ updateTtsHud && updateTtsHud(); }catch(e){}
+  showFlash("bad", "🎙 音声が他で使用中（待機中）");
+  return;
+}
+try{ updateTtsHud && updateTtsHud(); }catch(e){}
+synth.speak(u);
+ 
     
   }
 
