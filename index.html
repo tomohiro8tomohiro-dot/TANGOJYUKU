@@ -503,10 +503,53 @@
 <script>
 
 // ===== TTS LOCK (TRUE FIX) =====
-const TTS_LOCK_KEY = "hamaru_tts_lock";
+// ===== TTS LOCK（期限付き）=====
+const TTS_LOCK_KEY = "hamaru_tts_lock_v2";
 const TAB_ID = Math.random().toString(36).slice(2);
-// ★追加：前回の音声ロックを強制解除
-localStorage.removeItem("hamaru_tts_lock");
+const LOCK_TTL_MS = 12000; // 12秒で期限切れ
+
+function _now(){ return Date.now(); }
+
+function _readLock(){
+  try{
+    const raw = localStorage.getItem(TTS_LOCK_KEY);
+    if(!raw) return null;
+    const obj = JSON.parse(raw);
+    if(!obj || !obj.id || !obj.ts) return null;
+    if(_now() - obj.ts > LOCK_TTL_MS) return null; // 期限切れ
+    return obj;
+  }catch(e){ return null; }
+}
+
+function _writeLock(){
+  try{ localStorage.setItem(TTS_LOCK_KEY, JSON.stringify({id:TAB_ID, ts:_now()})); }catch(e){}
+}
+
+function acquireTtsLock(){
+  const lock = _readLock();
+  if(!lock || lock.id === TAB_ID){
+    _writeLock();
+    return true;
+  }
+  return false;
+}
+
+function releaseTtsLock(){
+  try{
+    const raw = localStorage.getItem(TTS_LOCK_KEY);
+    if(!raw) return;
+    const obj = JSON.parse(raw);
+    if(obj && obj.id === TAB_ID) localStorage.removeItem(TTS_LOCK_KEY);
+  }catch(e){}
+}
+
+window.addEventListener("beforeunload", releaseTtsLock);
+
+// スマホ対策：画面を離れたら解放（beforeunloadが走らないことがある）
+document.addEventListener("visibilitychange", () => {
+  if(document.hidden) releaseTtsLock();
+});
+
 
   
 function acquireTtsLock(){
@@ -519,6 +562,9 @@ function acquireTtsLock(){
 }
 function releaseTtsLock(){
   const owner = localStorage.getItem(TTS_LOCK_KEY);
+setInterval(()=>{ try{ updateTtsHud(); }catch(e){} }, 800);
+
+  
   if(owner === TAB_ID) localStorage.removeItem(TTS_LOCK_KEY);
 }
 window.addEventListener("beforeunload", releaseTtsLock);
@@ -679,18 +725,64 @@ const elGlobalWeakThreshold = document.getElementById("globalWeakThreshold");
   // オンライン読み上げ（簡易TTS）: 言語コードは primary（例: fr, it, ja）
   // 注意: サービス側の制限で動かない場合があります。その時はローカル/自動に戻してください。
   let __onlineAudio = null;
-  function speakOnline(text, langPrimary, isAuto=false){
-    try{
-      const lp = String(langPrimary || "en").toLowerCase();
-      // translate_tts は短文向け。長文は途切れることがあります。
-      const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text)}&tl=${lp}&client=tw-ob`;
-      if (!__onlineAudio) __onlineAudio = new Audio();
-      if (!isAuto) { try{ __onlineAudio.pause(); }catch(e){} }
+
+function speakOnline(text, langPrimary, isAuto=false){
+  try{
+    const lp = String(langPrimary || "en").toLowerCase();
+
+    // ✅ 2つのURLを順番に試す（環境によって片方が通る）
+    const urls = [
+      `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text)}&tl=${lp}&client=tw-ob`,
+      `https://translate.googleapis.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text)}&tl=${lp}&client=gtx`
+    ];
+
+    if (!__onlineAudio) {
+      __onlineAudio = new Audio();
+      __onlineAudio.preload = "auto";
+    }
+
+    // 手動のときは前の再生を止める
+    if (!isAuto) { try{ __onlineAudio.pause(); }catch(e){} }
+
+    let tried = 0;
+
+    const tryNext = () => {
+      if (tried >= urls.length) {
+        // ✅ onlineが全滅したらローカルにフォールバック（無音よりマシ）
+        try{
+          showFlash("bad", "オンライン音声が失敗したのでローカルで再生します");
+        }catch(e){}
+        try{
+          // VOICE_MODE はそのままでもOK（ここだけローカルで読む）
+          speakText(text, lp + "-" + lp.toUpperCase(), { mode: isAuto ? "auto" : "manual" });
+        }catch(e){}
+        return;
+      }
+
+      const url = urls[tried++];
       __onlineAudio.src = url;
-      __onlineAudio.play().catch(()=>{ /* blocked */ });
+      __onlineAudio.load();
+
+      const p = __onlineAudio.play();
+      if (p && p.catch) {
+        p.catch(() => {
+          // playが拒否/失敗 → 次のURL
+          tryNext();
+        });
+      }
+
+      // ネットワーク/403などで読み込み自体が失敗した場合
+      __onlineAudio.onerror = () => {
+        tryNext();
+      };
+
       if (elTtsHint) elTtsHint.textContent = `現在の音声: Online TTS / ${lp}`;
-    }catch(e){}
-  }
+    };
+
+    tryNext();
+  }catch(e){}
+}
+
 
 
   // =========================
