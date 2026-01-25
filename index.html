@@ -962,10 +962,11 @@ function __markActive(){
     } catch(e) {}
   }
 }
-
 ["mousemove","mousedown","keydown","touchstart","pointerdown","wheel","click"].forEach(ev=>{
-  window.addEventListener(ev, __markActive, {passive:true});
+  window.addEventListener(ev, __markActive, { passive:true, capture:true });
 });
+
+
 
 setInterval(()=>{
   try{
