@@ -132,35 +132,6 @@
 #ttsHudPill.active{ color:#38d996; }
 #ttsHudPill.waiting{ color:#ff5c7a; }
 
-
-
-/* ===== Mobile readability patch (choices + stats) ===== */
-@media (max-width: 520px){
-  /* pack stats into one row so "残り" stays up */
-  .stats{
-    grid-template-columns: repeat(4, 1fr);
-    gap: 8px;
-  }
-
-  /* make choices larger and easier to tap */
-  .choices{ gap: 14px; }
-
-  button.choice{
-    padding: 20px 16px;
-    border-radius: 16px;
-  }
-
-  .choiceText{
-    font-size: 22px;
-    line-height: 1.25;
-    font-weight: 700;
-    letter-spacing: .3px;
-  }
-
-  /* slightly tighten vertical rhythm up top */
-  .hud{ padding-top: 14px; }
-  .header{ margin-bottom: 10px; }
-}
 </style>
 </head>
 
@@ -499,60 +470,24 @@
         </div>
 
 
-
 <script>
 
 // ===== TTS LOCK (TRUE FIX) =====
-// ===== TTS LOCK（期限付き）=====
-const TTS_LOCK_KEY = "hamaru_tts_lock_v2";
+const TTS_LOCK_KEY = "hamaru_tts_lock";
 const TAB_ID = Math.random().toString(36).slice(2);
-const LOCK_TTL_MS = 12000; // 12秒で期限切れ
-
-function _now(){ return Date.now(); }
-
-function _readLock(){
-  try{
-    const raw = localStorage.getItem(TTS_LOCK_KEY);
-    if(!raw) return null;
-    const obj = JSON.parse(raw);
-    if(!obj || !obj.id || !obj.ts) return null;
-    if(_now() - obj.ts > LOCK_TTL_MS) return null; // 期限切れ
-    return obj;
-  }catch(e){ return null; }
-}
-
-function _writeLock(){
-  try{ localStorage.setItem(TTS_LOCK_KEY, JSON.stringify({id:TAB_ID, ts:_now()})); }catch(e){}
-}
-
 function acquireTtsLock(){
-  const lock = _readLock();
-  if(!lock || lock.id === TAB_ID){
-    _writeLock();
+  const owner = localStorage.getItem(TTS_LOCK_KEY);
+  if(!owner || owner === TAB_ID){
+    localStorage.setItem(TTS_LOCK_KEY, TAB_ID);
     return true;
   }
   return false;
 }
-
 function releaseTtsLock(){
-  try{
-    const raw = localStorage.getItem(TTS_LOCK_KEY);
-    if(!raw) return;
-    const obj = JSON.parse(raw);
-    if(obj && obj.id === TAB_ID) localStorage.removeItem(TTS_LOCK_KEY);
-  }catch(e){}
+  const owner = localStorage.getItem(TTS_LOCK_KEY);
+  if(owner === TAB_ID) localStorage.removeItem(TTS_LOCK_KEY);
 }
-
 window.addEventListener("beforeunload", releaseTtsLock);
-
-// スマホ対策：画面を離れたら解放（beforeunloadが走らないことがある）
-document.addEventListener("visibilitychange", () => {
-  if(document.hidden) releaseTtsLock();
-});
-
-
-  
-
 
 
   // =========================
@@ -710,64 +645,18 @@ const elGlobalWeakThreshold = document.getElementById("globalWeakThreshold");
   // オンライン読み上げ（簡易TTS）: 言語コードは primary（例: fr, it, ja）
   // 注意: サービス側の制限で動かない場合があります。その時はローカル/自動に戻してください。
   let __onlineAudio = null;
-
-function speakOnline(text, langPrimary, isAuto=false){
-  try{
-    const lp = String(langPrimary || "en").toLowerCase();
-
-    // ✅ 2つのURLを順番に試す（環境によって片方が通る）
-    const urls = [
-      `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text)}&tl=${lp}&client=tw-ob`,
-      `https://translate.googleapis.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text)}&tl=${lp}&client=gtx`
-    ];
-
-    if (!__onlineAudio) {
-      __onlineAudio = new Audio();
-      __onlineAudio.preload = "auto";
-    }
-
-    // 手動のときは前の再生を止める
-    if (!isAuto) { try{ __onlineAudio.pause(); }catch(e){} }
-
-    let tried = 0;
-
-    const tryNext = () => {
-      if (tried >= urls.length) {
-        // ✅ onlineが全滅したらローカルにフォールバック（無音よりマシ）
-        try{
-          showFlash("bad", "オンライン音声が失敗したのでローカルで再生します");
-        }catch(e){}
-        try{
-          // VOICE_MODE はそのままでもOK（ここだけローカルで読む）
-          speakText(text, lp + "-" + lp.toUpperCase(), { mode: isAuto ? "auto" : "manual" });
-        }catch(e){}
-        return;
-      }
-
-      const url = urls[tried++];
+  function speakOnline(text, langPrimary, isAuto=false){
+    try{
+      const lp = String(langPrimary || "en").toLowerCase();
+      // translate_tts は短文向け。長文は途切れることがあります。
+      const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text)}&tl=${lp}&client=tw-ob`;
+      if (!__onlineAudio) __onlineAudio = new Audio();
+      if (!isAuto) { try{ __onlineAudio.pause(); }catch(e){} }
       __onlineAudio.src = url;
-      __onlineAudio.load();
-
-      const p = __onlineAudio.play();
-      if (p && p.catch) {
-        p.catch(() => {
-          // playが拒否/失敗 → 次のURL
-          tryNext();
-        });
-      }
-
-      // ネットワーク/403などで読み込み自体が失敗した場合
-      __onlineAudio.onerror = () => {
-        tryNext();
-      };
-
+      __onlineAudio.play().catch(()=>{ /* blocked */ });
       if (elTtsHint) elTtsHint.textContent = `現在の音声: Online TTS / ${lp}`;
-    };
-
-    tryNext();
-  }catch(e){}
-}
-
+    }catch(e){}
+  }
 
 
   // =========================
@@ -962,12 +851,10 @@ function __markActive(){
     } catch(e) {}
   }
 }
-["pointerdown","keydown","touchstart","mousedown"].forEach(ev=>{
-  window.addEventListener(ev, __markActive, { passive:true, capture:true });
+
+["mousemove","mousedown","keydown","touchstart","pointerdown","wheel","click"].forEach(ev=>{
+  window.addEventListener(ev, __markActive, {passive:true});
 });
-
-
-
 
 setInterval(()=>{
   try{
@@ -1645,8 +1532,7 @@ function reviewStorageKey(){ return reviewStorageKeyFor(CURRENT_CSV_HASH); }
       elReviewList.appendChild(row);
     });
 
-    openOverlay(elReviewPanel);
-
+    elReviewPanel.style.display = "block";
   }
 
   function saveReviewPicker() {
@@ -2120,9 +2006,6 @@ function reviewStorageKey(){ return reviewStorageKeyFor(CURRENT_CSV_HASH); }
     }
 
     const u = new SpeechSynthesisUtterance(text);
-
-
-    
     let v = pickVoiceFor(langHint);
     if (!v) {
       const h = (langHint || "").toLowerCase();
@@ -2140,51 +2023,14 @@ function reviewStorageKey(){ return reviewStorageKeyFor(CURRENT_CSV_HASH); }
     u.rate = parseFloat(elRate.value || "1.0");
     u.volume = parseFloat(elVolume.value || "1.0");
     u.lang = (v && v.lang) ? v.lang : (langHint || "en-US");
-// ===== TTS safe speak (freeze-proof) =====
-let __ttsWatchdog = null;
-
-function __releaseTtsOnce(){
-  try{ releaseTtsLock(); }catch(e){}
-  try{ updateTtsHud && updateTtsHud(); }catch(e){}
-  try{ if(__ttsWatchdog) clearTimeout(__ttsWatchdog); }catch(e){}
-  __ttsWatchdog = null;
-}
-
-if (!acquireTtsLock()) {
-  try{ updateTtsHud && updateTtsHud(); }catch(e){}
-  showFlash("bad", "🎙 音声が他で使用中（待機中）");
-  return;
-}
-
-let released = false;
-const releaseOnce = () => {
-  if (released) return;
-  released = true;
-  __releaseTtsOnce();
-};
-
-// ★ end/errorが来ない端末があるので「強制解除タイマー」を必ず入れる
-u.onend = releaseOnce;
-u.onerror = releaseOnce;
-
-// autoは短めに見切る（固まり回避）
-__ttsWatchdog = setTimeout(() => {
-  try { window.speechSynthesis && window.speechSynthesis.cancel(); } catch(e){}
-  releaseOnce();
-}, (isAuto ? 2500 : 6000));
-
-try{
-  synth.speak(u);
-}catch(e){
-  releaseOnce();
-  showFlash("bad", "音声エラー（復帰したよ）");
-}
 
     
-   
- }
+    // === TTS LOCK hook ===
+    acquireTtsLock();
+    try{ updateTtsHud && updateTtsHud(); }catch(e){}
+    synth.speak(u);
     
-  
+  }
 
   function speakCurrent() {
     if (!current) { showFlash("bad", "まだ問題がないよ"); return; }
@@ -2204,11 +2050,7 @@ try{
   // Answer handling (方向対応 + 自動発音)
   // =========================
   function handleAnswer(selected) {
-  try{ __markActive(); }catch(e){}
-  if (locked) return;
-
-
-    
+    if (locked) return;
     setLocked(true);
     answered++;
 
@@ -2266,14 +2108,9 @@ try{
     renderHud();
     setTimeout(() => { setLocked(false); nextQuestion(); }, 520);
   }
-function handleSkip(isTimeout=false) {
-  try{ __markActive(); }catch(e){}
-  if (locked) return;
 
-  
-
-
-    
+  function handleSkip(isTimeout=false) {
+    if (locked) return;
     setLocked(true);
     combo = 0;
     answered++;
@@ -2659,21 +2496,12 @@ elCsvFile.addEventListener("change", async (e) => {
 function updateTtsHud(){
   const pill = document.getElementById("ttsHudPill");
   if(!pill) return;
-
-  let lock = null;
-  try{
-    const raw = localStorage.getItem(TTS_LOCK_KEY);
-    lock = raw ? JSON.parse(raw) : null;
-  }catch(e){
-    lock = null;
-  }
-
+  const owner = localStorage.getItem(TTS_LOCK_KEY);
   pill.classList.remove("free","active","waiting");
-
-  if(!lock || !lock.id){
+  if(!owner){
     pill.textContent = "🎙 音声: 未使用";
     pill.classList.add("free");
-  }else if(lock.id === TAB_ID){
+  }else if(owner === TAB_ID){
     pill.textContent = "🎙 音声: しゃべれる";
     pill.classList.add("active");
   }else{
@@ -2681,7 +2509,6 @@ function updateTtsHud(){
     pill.classList.add("waiting");
   }
 }
-
 try{ updateTtsHud(); }catch(e){}
 
 </script>
