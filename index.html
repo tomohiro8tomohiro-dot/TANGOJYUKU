@@ -166,6 +166,12 @@
     opacity: .85;
   }
 }
+
+
+/* ===== Mobile layout tighten (HUD/Top area) ===== */
+@media (max-width: 520px){
+  h1{ margin-bottom: 6px; }
+
 </style>
 </head>
 
@@ -182,6 +188,9 @@
           <div class="pill">残り: <b id="remaining">0</b></div>
         
           <div class="pill" id="ttsHudPill">🎙 音声: 未使用</div>
+<button class="btn smallbtn" type="button" id="clearTtsLock">🔓 音声ロック解除</button>
+
+
 <div class="pill">CSV: <b id="csvHud">内蔵データ</b></div>
         </div>
 
@@ -216,7 +225,7 @@
                 <div class="small" id="modeLabel">日本語 → 英語（4択）</div>
                 <button class="btn smallbtn" type="button" id="speak">🔊 発音</button>
                 <button class="btn smallbtn" type="button" id="stopSpeak">⏹ 停止</button>
-                <button class="btn smallbtn" type="button" id="clearTtsLock">🔓 音声ロック解除</button>
+                
               </div>
               <div class="big fit" id="prompt">---</div>
               <div class="small hint" id="ttsHint"></div>
@@ -2670,9 +2679,6 @@ function setVh(){
 setVh();
 addEventListener('resize', setVh);
 addEventListener('orientationchange', setVh);
-
-
-
 
 </script>
 </body>
