@@ -2181,7 +2181,11 @@ synth.speak(u);
   // Answer handling (方向対応 + 自動発音)
   // =========================
   function handleAnswer(selected) {
-    if (locked) return;
+  try{ __markActive(); }catch(e){}
+  if (locked) return;
+
+
+    
     setLocked(true);
     answered++;
 
@@ -2239,9 +2243,14 @@ synth.speak(u);
     renderHud();
     setTimeout(() => { setLocked(false); nextQuestion(); }, 520);
   }
+function handleSkip(isTimeout=false) {
+  try{ __markActive(); }catch(e){}
+  if (locked) return;
 
-  function handleSkip(isTimeout=false) {
-    if (locked) return;
+  
+
+
+    
     setLocked(true);
     combo = 0;
     answered++;
