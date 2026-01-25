@@ -2120,15 +2120,6 @@ function reviewStorageKey(){ return reviewStorageKeyFor(CURRENT_CSV_HASH); }
     }
 
     const u = new SpeechSynthesisUtterance(text);
-// ✅ 読み上げ完了/失敗で必ずロック解除（超重要）
-u.onend = () => {
-  releaseTtsLock();
-  try { updateTtsHud && updateTtsHud(); } catch(e) {}
-};
-u.onerror = () => {
-  releaseTtsLock();
-  try { updateTtsHud && updateTtsHud(); } catch(e) {}
-};
 
 
     
@@ -2149,19 +2140,51 @@ u.onerror = () => {
     u.rate = parseFloat(elRate.value || "1.0");
     u.volume = parseFloat(elVolume.value || "1.0");
     u.lang = (v && v.lang) ? v.lang : (langHint || "en-US");
+// ===== TTS safe speak (freeze-proof) =====
+let __ttsWatchdog = null;
 
-    
-   // === TTS LOCK hook ===
+function __releaseTtsOnce(){
+  try{ releaseTtsLock(); }catch(e){}
+  try{ updateTtsHud && updateTtsHud(); }catch(e){}
+  try{ if(__ttsWatchdog) clearTimeout(__ttsWatchdog); }catch(e){}
+  __ttsWatchdog = null;
+}
+
 if (!acquireTtsLock()) {
   try{ updateTtsHud && updateTtsHud(); }catch(e){}
   showFlash("bad", "🎙 音声が他で使用中（待機中）");
   return;
 }
-try{ updateTtsHud && updateTtsHud(); }catch(e){}
-synth.speak(u);
+
+let released = false;
+const releaseOnce = () => {
+  if (released) return;
+  released = true;
+  __releaseTtsOnce();
+};
+
+// ★ end/errorが来ない端末があるので「強制解除タイマー」を必ず入れる
+u.onend = releaseOnce;
+u.onerror = releaseOnce;
+
+// autoは短めに見切る（固まり回避）
+__ttsWatchdog = setTimeout(() => {
+  try { window.speechSynthesis && window.speechSynthesis.cancel(); } catch(e){}
+  releaseOnce();
+}, (isAuto ? 2500 : 6000));
+
+try{
+  synth.speak(u);
+}catch(e){
+  releaseOnce();
+  showFlash("bad", "音声エラー（復帰したよ）");
+}
+
+    
+   
  
     
-  }
+  
 
   function speakCurrent() {
     if (!current) { showFlash("bad", "まだ問題がないよ"); return; }
