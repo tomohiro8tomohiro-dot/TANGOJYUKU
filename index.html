@@ -6,6 +6,15 @@
   <title>HAMARU風 単語4択（CSV/復習/周回/結果/音声/切替）</title>
   <style>
     :root { --bg:#0b1020; --card:#121a33; --text:#e8eeff; --muted:#a9b3d6; --good:#38d996; --bad:#ff5c7a; }
+/* まず安全な高さ基準を作る */
+:root { --vh: 1vh; }
+
+/* 画面全体を使う所は 100vh ではなくこれ */
+.appHeight {
+  min-height: calc(var(--vh) * 100);height: calc(var(--vh) * 100);
+}
+
+
     body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans JP", sans-serif;
       background:radial-gradient(1200px 800px at 20% 0%, #1b2a66 0%, var(--bg) 55%); color:var(--text); }
     .wrap { max-width: 1020px; margin: 0 auto; padding: 20px; }
@@ -160,7 +169,7 @@
 </style>
 </head>
 
-<body>
+<body class="appHeight">
   <div class="wrap">
     <div class="row">
       <div class="card" style="flex: 1 1 600px;">
@@ -2527,9 +2536,19 @@ elCsvFile.addEventListener("change", async (e) => {
     try{ localStorage.removeItem(TTS_LOCK_KEY); }catch(e){}
     try{ releaseTtsLock(); }catch(e){}
     try{ updateTtsHud(); }catch(e){}
+// reflect lock changes from other tabs（1回だけ起動）
+try{
+  if (!window.__ttsHudTimer) {
+    window.__ttsHudTimer = setInterval(() => {
+      try { updateTtsHud(); } catch(e) {}
+    }, 1000);
+  }
+}catch(e){}
 
-// reflect lock changes from other tabs
-try{ setInterval(updateTtsHud, 1000); }catch(e){}
+
+
+
+
 
     showFlash("good", "音声ロックを解除したよ（必要なら再生してみてね）");
   });
@@ -2645,6 +2664,15 @@ function updateTtsHud(){
   }
 }
 try{ updateTtsHud(); }catch(e){}
+function setVh(){
+  document.documentElement.style.setProperty('--vh', (window.innerHeight * 0.01) + 'px');
+}
+setVh();
+addEventListener('resize', setVh);
+addEventListener('orientationchange', setVh);
+
+
+
 
 </script>
 </body>
