@@ -132,6 +132,31 @@
 #ttsHudPill.active{ color:#38d996; }
 #ttsHudPill.waiting{ color:#ff5c7a; }
 
+
+
+/* ===== Mobile answer size (requested) ===== */
+@media (max-width: 520px){
+  .choices{ gap: 14px; }
+
+  button.choice{
+    padding: 22px 18px;
+    border-radius: 18px;
+  }
+
+  /* Answer text size similar to your screenshot */
+  .choiceText{
+    font-size: clamp(26px, 6.5vw, 34px);
+    line-height: 1.18;
+    font-weight: 800;
+    letter-spacing: .2px;
+  }
+
+  /* (1)(2)(3)(4) label */
+  button.choice .small{
+    font-size: 16px;
+    opacity: .85;
+  }
+}
 </style>
 </head>
 
@@ -182,6 +207,7 @@
                 <div class="small" id="modeLabel">日本語 → 英語（4択）</div>
                 <button class="btn smallbtn" type="button" id="speak">🔊 発音</button>
                 <button class="btn smallbtn" type="button" id="stopSpeak">⏹ 停止</button>
+                <button class="btn smallbtn" type="button" id="clearTtsLock">🔓 音声ロック解除</button>
               </div>
               <div class="big fit" id="prompt">---</div>
               <div class="small hint" id="ttsHint"></div>
@@ -472,25 +498,99 @@
 
 <script>
 
-// ===== TTS LOCK (TRUE FIX) =====
+// ===== TTS LOCK (stale-safe) =====
+// 音声は「同じブラウザ内の別タブ」と競合しやすいので、localStorageで簡易ロックします。
+// ただし、タブがクラッシュ/強制終了すると解放されないことがあるため、TTL（期限）と心拍で自動復旧します。
 const TTS_LOCK_KEY = "hamaru_tts_lock";
 const TAB_ID = Math.random().toString(36).slice(2);
+const LOCK_TTL_MS = 12000;     // 12秒で期限切れ扱い
+const HEARTBEAT_MS = 3000;     // 所有中は3秒ごとに更新
+
+function _now(){ return Date.now(); }
+
+function _readLock(){
+  try{
+    const raw = localStorage.getItem(TTS_LOCK_KEY);
+    if(!raw) return null;
+    // 旧形式（文字列のみ）も救済
+    if(raw && raw[0] !== "{"){
+      return { id: raw, ts: _now() };
+    }
+    const obj = JSON.parse(raw);
+    if(!obj || !obj.id) return null;
+    // ts が無い/壊れてる場合は即期限切れ扱い
+    if(!obj.ts || (_now() - obj.ts) > LOCK_TTL_MS) return null;
+    return obj;
+  }catch(e){
+    return null;
+  }
+}
+
+function _writeLock(){
+  try{
+    localStorage.setItem(TTS_LOCK_KEY, JSON.stringify({ id: TAB_ID, ts: _now() }));
+  }catch(e){}
+}
+
+let __ttsHeartbeat = null;
+function _startHeartbeat(){
+  try{ if(__ttsHeartbeat) return; }catch(e){}
+  __ttsHeartbeat = setInterval(()=>{
+    try{
+      const lock = _readLock();
+      if(lock && lock.id === TAB_ID){
+        _writeLock(); // 更新
+      }else{
+        // もう所有してないなら停止
+        try{ clearInterval(__ttsHeartbeat); }catch(e){}
+        __ttsHeartbeat = null;
+      }
+    }catch(e){}
+  }, HEARTBEAT_MS);
+}
+
 function acquireTtsLock(){
-  const owner = localStorage.getItem(TTS_LOCK_KEY);
-  if(!owner || owner === TAB_ID){
-    localStorage.setItem(TTS_LOCK_KEY, TAB_ID);
+  const lock = _readLock();
+  if(!lock || lock.id === TAB_ID){
+    _writeLock();
+    _startHeartbeat();
     return true;
   }
+  // 期限切れは _readLock が null を返すので、ここに来るのは「他タブが生きてる」時
   return false;
 }
+
 function releaseTtsLock(){
-  const owner = localStorage.getItem(TTS_LOCK_KEY);
-  if(owner === TAB_ID) localStorage.removeItem(TTS_LOCK_KEY);
+  try{
+    const raw = localStorage.getItem(TTS_LOCK_KEY);
+    if(!raw) return;
+    if(raw && raw[0] !== "{"){
+      // 旧形式
+      if(raw === TAB_ID) localStorage.removeItem(TTS_LOCK_KEY);
+    }else{
+      const obj = JSON.parse(raw);
+      if(obj && obj.id === TAB_ID) localStorage.removeItem(TTS_LOCK_KEY);
+    }
+  }catch(e){}
+  try{ if(__ttsHeartbeat) clearInterval(__ttsHeartbeat); }catch(e){}
+  __ttsHeartbeat = null;
 }
-window.addEventListener("beforeunload", releaseTtsLock);
 
+// タブを閉じる/移動するタイミングで解放
+window.addEventListener("beforeunload", () => {
+  try{ releaseTtsLock(); }catch(e){}
+});
 
-  // =========================
+// スマホ対策：バックグラウンドへ行くと beforeunload が走らないことがある
+document.addEventListener("visibilitychange", () => {
+  if(document.hidden){
+    // hidden時は停止ボタン相当（読み上げも止める）
+    try{ window.speechSynthesis && window.speechSynthesis.cancel(); }catch(e){}
+    try{ releaseTtsLock(); }catch(e){}
+  }
+});
+
+// =========================
   // 初期単語（英語）
   // en = 英語, ja = 日本語
   // =========================
@@ -2420,6 +2520,21 @@ elCsvFile.addEventListener("change", async (e) => {
   elSpeak.addEventListener("click", () => speakCurrent());
   elStopSpeak.addEventListener("click", () => stopSpeech());
 
+  // Force clear TTS lock (for rare stuck states)
+  const elClearTtsLock = document.getElementById("clearTtsLock");
+  elClearTtsLock?.addEventListener("click", () => {
+    try{ window.speechSynthesis && window.speechSynthesis.cancel(); }catch(e){}
+    try{ localStorage.removeItem(TTS_LOCK_KEY); }catch(e){}
+    try{ releaseTtsLock(); }catch(e){}
+    try{ updateTtsHud(); }catch(e){}
+
+// reflect lock changes from other tabs
+try{ setInterval(updateTtsHud, 1000); }catch(e){}
+
+    showFlash("good", "音声ロックを解除したよ（必要なら再生してみてね）");
+  });
+
+
   // Keyboard shortcuts
   window.addEventListener("keydown", (e) => {
     if (overlayDepth > 0) return;
@@ -2496,12 +2611,32 @@ elCsvFile.addEventListener("change", async (e) => {
 function updateTtsHud(){
   const pill = document.getElementById("ttsHudPill");
   if(!pill) return;
-  const owner = localStorage.getItem(TTS_LOCK_KEY);
+
+  let lock = null;
+  try{
+    const raw = localStorage.getItem(TTS_LOCK_KEY);
+    if(!raw){
+      lock = null;
+    }else if(raw[0] !== "{"){
+      // 旧形式（id文字列のみ）
+      lock = { id: raw, ts: Date.now() };
+    }else{
+      lock = JSON.parse(raw);
+      // 期限切れなら「未使用」扱い（表示が赤のまま固まるのを防ぐ）
+      if(lock && lock.ts && (Date.now() - lock.ts) > (typeof LOCK_TTL_MS !== "undefined" ? LOCK_TTL_MS : 12000)){
+        lock = null;
+      }
+    }
+  }catch(e){
+    lock = null;
+  }
+
   pill.classList.remove("free","active","waiting");
-  if(!owner){
+
+  if(!lock || !lock.id){
     pill.textContent = "🎙 音声: 未使用";
     pill.classList.add("free");
-  }else if(owner === TAB_ID){
+  }else if(lock.id === TAB_ID){
     pill.textContent = "🎙 音声: しゃべれる";
     pill.classList.add("active");
   }else{
