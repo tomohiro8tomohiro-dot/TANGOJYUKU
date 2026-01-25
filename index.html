@@ -552,22 +552,7 @@ document.addEventListener("visibilitychange", () => {
 
 
   
-function acquireTtsLock(){
-  const owner = localStorage.getItem(TTS_LOCK_KEY);
-  if(!owner || owner === TAB_ID){
-    localStorage.setItem(TTS_LOCK_KEY, TAB_ID);
-    return true;
-  }
-  return false;
-}
-function releaseTtsLock(){
-  const owner = localStorage.getItem(TTS_LOCK_KEY);
-setInterval(()=>{ try{ updateTtsHud(); }catch(e){} }, 800);
 
-  
-  if(owner === TAB_ID) localStorage.removeItem(TTS_LOCK_KEY);
-}
-window.addEventListener("beforeunload", releaseTtsLock);
 
 
   // =========================
@@ -2640,12 +2625,21 @@ elCsvFile.addEventListener("change", async (e) => {
 function updateTtsHud(){
   const pill = document.getElementById("ttsHudPill");
   if(!pill) return;
-  const owner = localStorage.getItem(TTS_LOCK_KEY);
+
+  let lock = null;
+  try{
+    const raw = localStorage.getItem(TTS_LOCK_KEY);
+    lock = raw ? JSON.parse(raw) : null;
+  }catch(e){
+    lock = null;
+  }
+
   pill.classList.remove("free","active","waiting");
-  if(!owner){
+
+  if(!lock || !lock.id){
     pill.textContent = "🎙 音声: 未使用";
     pill.classList.add("free");
-  }else if(owner === TAB_ID){
+  }else if(lock.id === TAB_ID){
     pill.textContent = "🎙 音声: しゃべれる";
     pill.classList.add("active");
   }else{
@@ -2653,6 +2647,7 @@ function updateTtsHud(){
     pill.classList.add("waiting");
   }
 }
+
 try{ updateTtsHud(); }catch(e){}
 
 </script>
