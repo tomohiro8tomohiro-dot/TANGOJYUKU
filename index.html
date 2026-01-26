@@ -171,6 +171,7 @@
 /* ===== Mobile layout tighten (HUD/Top area) ===== */
 @media (max-width: 520px){
   h1{ margin-bottom: 6px; }
+}
 
 </style>
 </head>
@@ -793,7 +794,7 @@ const elGlobalWeakThreshold = document.getElementById("globalWeakThreshold");
       });
     }
     const st = STATS.get(k);
-    try { const l = (w.lang || w.en_lang || '').trim(); if (l) st.langs.add(l); } catch {}
+    try { const l = normLang(w.lang || w.en_lang || ''); if (l) st.langs.add(l); } catch {}
     return st;
   }
 
@@ -809,7 +810,27 @@ const elGlobalWeakThreshold = document.getElementById("globalWeakThreshold");
 
   let SELECTED_LANGS = new Set(); // empty = all (no filter)
 
-  function normLang(x){ return (x || "").trim(); }
+  function normLang(x){
+    const s = (x || "").toString().trim();
+    if (!s) return "";
+    const t = s.replace("_","-");
+    const low = t.toLowerCase();
+    // tolerant mapping (CSV may use short tags)
+    if (low === "en") return "en-US";
+    if (low === "ja") return "ja-JP";
+    if (low === "ko") return "ko-KR";
+    if (low === "zh-tw" || low === "zh-hant" || low === "tw") return "zh-TW";
+    if (low === "zh-cn" || low === "zh-hans" || low === "cn") return "zh-CN";
+    if (low === "fr") return "fr-FR";
+    if (low === "de") return "de-DE";
+    if (low === "es") return "es-ES";
+    if (low === "it") return "it-IT";
+    if (low === "pt" || low === "pt-br") return "pt-BR";
+    // normalize casing like en-us -> en-US
+    const parts = t.split("-");
+    if (parts.length === 1) return parts[0];
+    return parts[0].toLowerCase() + "-" + parts[1].toUpperCase();
+  }
 
   function getKnownLangs() {
     const s = new Set();
@@ -1542,7 +1563,8 @@ function reviewStorageKey(){ return reviewStorageKeyFor(CURRENT_CSV_HASH); }
   function applyDeckFilter() {
     const v = elDeckSelect ? elDeckSelect.value : "all";
 
-    let allowed = new Set([1,2,3]);
+    // ★重要: 「全部」は level でフィルターしない（CSVがLv5やLv10でも動くように）
+    let allowed = null; // null = allow all levels
     if (v === "1") allowed = new Set([1]);
     if (v === "2") allowed = new Set([2]);
     if (v === "3") allowed = new Set([3]);
@@ -1550,8 +1572,12 @@ function reviewStorageKey(){ return reviewStorageKeyFor(CURRENT_CSV_HASH); }
     if (v === "23") allowed = new Set([2,3]);
 
     WORDS = WORDS_ALL
-      .filter(w => allowed.has(Number(w.level ?? 0)))
-      .map(w => ({ en: w.en, ja: w.ja, level: Number(w.level ?? 1), lang: (w.lang||""), en_lang: (w.en_lang||""), ja_lang: (w.ja_lang||"") }));
+      .filter(w => !allowed || allowed.has(Number(w.level ?? 0)))
+      .map(w => ({
+        en: w.en, ja: w.ja,
+        level: Number(w.level ?? 1),
+        lang: (w.lang || ""), en_lang: (w.en_lang || ""), ja_lang: (w.ja_lang || ""), tts: (w.tts || "")
+      }));
 
     const name = (v === "all") ? "全部" : v;
     elDeckStatus.textContent = `デッキ: ${name}（${WORDS.length}語）`;
@@ -1561,19 +1587,50 @@ function reviewStorageKey(){ return reviewStorageKeyFor(CURRENT_CSV_HASH); }
   // CSV parse (en,ja,level)
   // =========================
   function parseCSV(text) {
-    const lines = text.replace(/\r/g, "").split("\n").filter(l => l.trim().length > 0);
+    // Robust CSV parser: supports quotes, commas inside quotes, and Excel BOM
+    const raw = (text || "").replace(/\r/g, "");
+    let lines = raw.split("\n");
+
+    // drop leading/trailing empty lines
+    while (lines.length && lines[0].trim() === "") lines.shift();
+    while (lines.length && lines[lines.length-1].trim() === "") lines.pop();
     if (lines.length < 2) return [];
 
     // ★BOM除去（Excel等のUTF-8 BOM付きCSVでもOK）
     lines[0] = lines[0].replace(/^\uFEFF/, "");
 
-    const header = lines[0].split(",").map(s => s.trim().toLowerCase());
+    function parseCSVLine(line){
+      const out = [];
+      let cur = "";
+      let inQ = false;
+      for (let i=0;i<line.length;i++){
+        const ch = line[i];
+        if (inQ){
+          if (ch === '"'){
+            // escaped quote
+            if (i+1 < line.length && line[i+1] === '"'){ cur += '"'; i++; }
+            else { inQ = false; }
+          } else {
+            cur += ch;
+          }
+        } else {
+          if (ch === '"'){ inQ = true; }
+          else if (ch === ','){ out.push(cur); cur=""; }
+          else { cur += ch; }
+        }
+      }
+      out.push(cur);
+      return out.map(s => (s ?? "").trim());
+    }
+
+    const header = parseCSVLine(lines[0]).map(s => s.trim().toLowerCase());
     const enIdx = header.indexOf("en");
     const jaIdx = header.indexOf("ja");
     const lvIdx = header.indexOf("level");
     const langIdx = header.indexOf("lang"); // ★推奨（言語タグ）
     const enLangIdx = header.indexOf("en_lang"); // 任意
     const jaLangIdx = header.indexOf("ja_lang"); // 任意（将来用）
+    const ttsIdx = header.indexOf("tts"); // 任意
 
     if (enIdx === -1 || jaIdx === -1) {
       throw new Error("CSVの1行目は en,ja,level（levelは任意）にしてね");
@@ -1581,23 +1638,29 @@ function reviewStorageKey(){ return reviewStorageKeyFor(CURRENT_CSV_HASH); }
 
     const items = [];
     for (let i = 1; i < lines.length; i++) {
-      const cols = lines[i].split(",");
-      const en = (cols[enIdx] ?? "").trim();
-      const ja = (cols[jaIdx] ?? "").trim();
+      const line = lines[i];
+      if (!line || line.trim().length === 0) continue;
+      const cols = parseCSVLine(line);
+
+      const en = (cols[enIdx] ?? "").trim().replace(/^"(.*)"$/,"$1");
+      const ja = (cols[jaIdx] ?? "").trim().replace(/^"(.*)"$/,"$1");
 
       let level = 1;
       if (lvIdx !== -1) {
-        const raw = (cols[lvIdx] ?? "").trim();
-        const n = Number(raw);
-        level = Number.isFinite(n) && n >= 1 && n <= 3 ? n : 1;
+        const rawLv = (cols[lvIdx] ?? "").trim().replace(/^"(.*)"$/,"$1");
+        const n = Number(rawLv);
+        level = Number.isFinite(n) && n >= 1 && n <= 99 ? n : 1;
       }
 
-      const lang = (langIdx !== -1 ? (cols[langIdx] ?? "").trim() : "") || (enLangIdx !== -1 ? (cols[enLangIdx] ?? "").trim() : "") || "";
-      const en_lang = (enLangIdx !== -1 ? (cols[enLangIdx] ?? "").trim() : "");
-      const ja_lang = (jaLangIdx !== -1 ? (cols[jaLangIdx] ?? "").trim() : "");
+      const lang = ((langIdx !== -1 ? (cols[langIdx] ?? "").trim() : "") ||
+                    (enLangIdx !== -1 ? (cols[enLangIdx] ?? "").trim() : "") || "")
+                    .replace(/^"(.*)"$/,"$1");
+      const en_lang = ((enLangIdx !== -1 ? (cols[enLangIdx] ?? "").trim() : "") || "").replace(/^"(.*)"$/,"$1");
+      const ja_lang = ((jaLangIdx !== -1 ? (cols[jaLangIdx] ?? "").trim() : "") || "").replace(/^"(.*)"$/,"$1");
+      const tts = ((ttsIdx !== -1 ? (cols[ttsIdx] ?? "").trim() : "") || "").replace(/^"(.*)"$/,"$1");
 
       if (!en || !ja) continue;
-      items.push({ en, ja, level, lang, en_lang, ja_lang });
+      items.push({ en, ja, level, lang, en_lang, ja_lang, tts });
     }
     return items;
   }
