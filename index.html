@@ -945,6 +945,20 @@ const elGlobalWeakThreshold = document.getElementById("globalWeakThreshold");
   }
 
 
+  function debugActiveStatus(activeList){
+    try{
+      const deckv = elDeckSelect ? elDeckSelect.value : "all";
+      const langtxt = (SELECTED_LANGS.size === 0) ? "すべて" : Array.from(SELECTED_LANGS).join(", ");
+      const rev = elReviewMode ? elReviewMode.value : "off";
+      const revn = (REVIEW_SET && REVIEW_SET.length) ? REVIEW_SET.length : 0;
+      if (elCsvStatus){
+        elCsvStatus.textContent =
+          `現在のCSV: ${CURRENT_CSV_NAME}（総${(WORDS_ALL||[]).length}語） / 有効:${(activeList||[]).length}語 / デッキ:${deckv} / 言語:${langtxt} / 復習:${rev}(${revn})`;
+      }
+    }catch(e){}
+  }
+
+
   // =========================
   // State
   // =========================
@@ -2346,6 +2360,8 @@ function reviewStorageKey(){ return reviewStorageKeyFor(CURRENT_CSV_HASH); }
     const mode = elReviewMode?.value ?? "off";
     if (mode === "on" && REVIEW_SET.length >= 4) ACTIVE = filterByLang(REVIEW_SET);
 
+    debugActiveStatus(ACTIVE);
+
     if (SELECTED_LANGS.size > 0 && ACTIVE.length === 0) {
       showFlash("bad", "選んだ言語の単語が0件だよ（復習モード中なら復習データがその言語に無い場合もあるよ）");
     }
@@ -2565,6 +2581,13 @@ elCsvFile.addEventListener("change", async (e) => {
       CURRENT_CSV_HASH = newHash;
       WORDS_ALL = items;
       CURRENT_CSV_NAME = filename;
+
+      // ★スマホで「単語が足りない」を防ぐ：CSV読み込み直後はフィルターを初期化
+      try{ if (elDeckSelect) elDeckSelect.value = "all"; }catch(e){}
+      try{ if (elReviewMode) elReviewMode.value = "off"; }catch(e){}
+      try{ REVIEW_SET = []; }catch(e){}
+      try{ SELECTED_LANGS = new Set(); }catch(e){} // すべて
+      try{ if (typeof renderLangFilterOptions === "function") renderLangFilterOptions(); }catch(e){}
 
       recordFilenameHash(filename, newHash, items.length);
 
