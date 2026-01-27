@@ -193,6 +193,7 @@
 
 
 <div class="pill">CSV: <b id="csvHud">内蔵データ</b></div>
+<div class="pill">今日: <b id="dailyHud">0問 0%</b> <span id="streakHud" class="small" style="margin-left:6px;">🔥0</span></div>
         </div>
 
         <div class="spacer"></div>
@@ -247,7 +248,8 @@
           <div class="controls">
             <button class="btn" type="button" id="skip">スキップ（復習に回す）</button>
             <button class="btn" type="button" id="restart">リスタート</button>
-            <button class="btn" type="button" id="pauseResults">結果を見る（一時停止）</button>
+            <button class="btn" type="button" id="showResultsBtn">結果を見る</button>
+            <button class="btn" type="button" id="pauseBtn">⏸ 一時停止</button>
           </div>
 
           <div class="footer small">
@@ -263,6 +265,27 @@
 
       <div class="card" style="flex: 1 1 360px;">
         <h1>設定</h1>
+
+        <div class="spacer"></div>
+
+        <div class="card" style="background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.08);">
+          <h1 style="font-size:16px;margin:0 0 8px;">📅 学習ログ（このCSV）</h1>
+          <div class="small" id="dailySummaryLine">今日: --</div>
+          <div class="small" id="streakLine" style="margin-top:4px;">連続: --</div>
+          <div class="inline" style="margin-top:10px; gap:8px; flex-wrap:wrap;">
+            <button class="btn smallbtn" type="button" id="toggleDailyPanel">履歴を見る</button>
+            <button class="btn smallbtn" type="button" id="resetToday">今日をリセット</button>
+          </div>
+          <div id="dailyPanel" class="card" style="display:none; margin-top:10px; padding:12px;">
+            <div class="small" style="opacity:.92; margin-bottom:6px;">直近の履歴（最大30日）</div>
+            <div id="dailyHistory" class="small" style="max-height:220px; overflow:auto;"></div>
+          </div>
+          <div class="small" style="opacity:.8; margin-top:8px;">
+            ※このログは「このCSVだけ」に保存されます（他CSVとは別）<br/>
+            ※「今日をリセット」はこのCSVの“今日分”だけ0にします
+          </div>
+        </div>
+
 
         <!-- ③ 方向切替 -->
         <div class="settings">
@@ -433,6 +456,8 @@
         <div class="settings">
           <label class="small">CSVを読み込み</label>
           <input id="csvFile" type="file" accept=".csv,text/csv" />
+          <button class="btn smallbtn" type="button" id="forgetLastCsv">🧹 前回CSVを忘れる</button>
+          <div class="small" id="lastCsvStatus" style="margin-top:6px;opacity:.85;"></div>
         </div>
         <div class="small" id="csvStatus" style="margin-top:8px;opacity:.9;"></div>
 
@@ -654,7 +679,156 @@ document.addEventListener("visibilitychange", () => {
   let CURRENT_CSV_NAME = "内蔵データ";
   let CURRENT_CSV_HASH = "builtin"; // CSV内容ベースの指紋（SHA-256）
 
+  // =========================
+  // Daily learning log (per CSV hash) ✅ 今日 / 履歴 / 連続
+  // =========================
+  const DAILY_PREFIX = "hamaru_daily_v1::";           // per day + csvhash
+  const DAILY_HISTORY_PREFIX = "hamaru_daily_hist_v1::"; // per csvhash list
+  let DAILY = { date:"", seen:0, correct:0, wrong:0, skip:0, updatedAt:0 };
 
+  function jstDateKey(d=new Date()){
+    try{
+      // "sv-SE" -> YYYY-MM-DD
+      return new Intl.DateTimeFormat("sv-SE",{ timeZone:"Asia/Tokyo", year:"numeric", month:"2-digit", day:"2-digit" }).format(d);
+    }catch(e){
+      // fallback (local)
+      return d.toISOString().slice(0,10);
+    }
+  }
+  function dailyKeyFor(hash, date){ return `${DAILY_PREFIX}${hash}::${date}`; }
+  function dailyHistoryKeyFor(hash){ return `${DAILY_HISTORY_PREFIX}${hash}`; }
+
+  function loadDailyForCurrent(){
+    const date = jstDateKey();
+    DAILY.date = date;
+    try{
+      const raw = localStorage.getItem(dailyKeyFor(CURRENT_CSV_HASH, date));
+      if(raw){
+        const obj = JSON.parse(raw);
+        DAILY = { date, seen: Number(obj.seen||0), correct:Number(obj.correct||0), wrong:Number(obj.wrong||0), skip:Number(obj.skip||0), updatedAt:Number(obj.updatedAt||0) };
+      }else{
+        DAILY = { date, seen:0, correct:0, wrong:0, skip:0, updatedAt:0 };
+      }
+    }catch(e){
+      DAILY = { date, seen:0, correct:0, wrong:0, skip:0, updatedAt:0 };
+    }
+    renderDailyUI();
+  }
+
+  function saveDaily(){
+    try{
+      DAILY.updatedAt = Date.now();
+      localStorage.setItem(dailyKeyFor(CURRENT_CSV_HASH, DAILY.date), JSON.stringify(DAILY));
+    }catch(e){}
+  }
+
+  function loadDailyHistory(){
+    try{
+      const raw = localStorage.getItem(dailyHistoryKeyFor(CURRENT_CSV_HASH));
+      const arr = raw ? JSON.parse(raw) : [];
+      return Array.isArray(arr) ? arr : [];
+    }catch(e){
+      return [];
+    }
+  }
+
+  function saveDailyHistory(arr){
+    try{ localStorage.setItem(dailyHistoryKeyFor(CURRENT_CSV_HASH), JSON.stringify(arr||[])); }catch(e){}
+  }
+
+  function upsertTodayInHistory(){
+    const arr = loadDailyHistory();
+    const date = DAILY.date;
+    const rec = {
+      date,
+      csvName: CURRENT_CSV_NAME || "（不明）",
+      seen: DAILY.seen, correct: DAILY.correct, wrong: DAILY.wrong, skip: DAILY.skip
+    };
+    const out = [rec, ...arr.filter(x => x && x.date !== date)];
+    saveDailyHistory(out.slice(0, 30));
+  }
+
+  function calcStreak(){
+    const arr = loadDailyHistory().slice().sort((a,b)=> String(b.date).localeCompare(String(a.date)));
+    if(!arr.length) return 0;
+
+    // index by date for fast lookup
+    const map = new Map();
+    for(const r of arr){
+      if(r && r.date) map.set(String(r.date), r);
+    }
+
+    let streak = 0;
+    let d = new Date();
+    for(let i=0; i<366; i++){
+      const key = jstDateKey(d);
+      const r = map.get(key);
+      if(r && Number(r.seen||0) > 0){
+        streak++;
+        d.setDate(d.getDate()-1);
+      }else{
+        break;
+      }
+    }
+    return streak;
+  }
+
+  let __dailySaveTimer = null;
+  function dailyInc(kind, n=1){
+    if(!DAILY || DAILY.date !== jstDateKey()) loadDailyForCurrent();
+    if(kind === "seen") DAILY.seen += n;
+    if(kind === "correct") DAILY.correct += n;
+    if(kind === "wrong") DAILY.wrong += n;
+    if(kind === "skip") DAILY.skip += n;
+
+    try{ if(__dailySaveTimer) clearTimeout(__dailySaveTimer); }catch(e){}
+    __dailySaveTimer = setTimeout(()=>{
+      saveDaily();
+      upsertTodayInHistory();
+      renderDailyUI();
+    }, 80);
+  }
+
+  function renderDailyUI(){
+    const acc = DAILY.seen ? Math.round((DAILY.correct/DAILY.seen)*100) : 0;
+    const streak = calcStreak();
+
+    const elDailyHud = document.getElementById("dailyHud");
+    const elStreakHud = document.getElementById("streakHud");
+    const elDailySummaryLine = document.getElementById("dailySummaryLine");
+    const elStreakLine = document.getElementById("streakLine");
+    const elDailyHistory = document.getElementById("dailyHistory");
+
+    if(elDailyHud) elDailyHud.textContent = `${DAILY.seen}問 ${acc}%`;
+    if(elStreakHud) elStreakHud.textContent = `🔥${streak}`;
+
+    if(elDailySummaryLine){
+      elDailySummaryLine.textContent = `今日: 出題${DAILY.seen} / 正解${DAILY.correct} / 不正解${DAILY.wrong} / スキップ${DAILY.skip} / 正解率${acc}%`;
+    }
+    if(elStreakLine){
+      elStreakLine.textContent = `連続: ${streak}日`;
+    }
+
+    if(elDailyHistory){
+      const arr = loadDailyHistory();
+      if(!arr.length){
+        elDailyHistory.innerHTML = `<div class="small">まだ履歴がないよ。まずは何問か解いてね。</div>`;
+      }else{
+        elDailyHistory.innerHTML = arr.map(r=>{
+          const seen = Number(r.seen||0);
+          const correct = Number(r.correct||0);
+          const a = seen ? Math.round((correct/seen)*100) : 0;
+          return `<div style="padding:6px 0;border-bottom:1px solid rgba(255,255,255,.08);">
+            <b>${escapeHtml(r.date || "")}</b> <span class="small">(${escapeHtml(r.csvName||"")})</span><br/>
+            <span class="small">出題${seen} / 正解率${a}%（正解${correct}・不正解${Number(r.wrong||0)}・スキップ${Number(r.skip||0)}）</span>
+          </div>`;
+        }).join("");
+      }
+    }
+  }
+
+
+  
   // =========================
   // DOM
   // =========================
@@ -672,9 +846,10 @@ document.addEventListener("visibilitychange", () => {
 
   const elSkip = document.getElementById("skip");
   const elRestart = document.getElementById("restart");
-  const elPauseResults = document.getElementById("pauseResults");
+  const elShowResultsBtn = document.getElementById("showResultsBtn");
+  const elPauseBtn = document.getElementById("pauseBtn");
 
-  const elDirection = document.getElementById("direction");
+const elDirection = document.getElementById("direction");
   const elSecondsPerQ = document.getElementById("secondsPerQ");
   const elReviewWeight = document.getElementById("reviewWeight");
   const elRounds = document.getElementById("rounds");
@@ -977,10 +1152,12 @@ document.addEventListener("visibilitychange", () => {
     // stop timer/game progress
     isPaused = true;
     try { showFlash("bad", "⏸ 画面が非表示のため自動停止中"); } catch(e) {}
-  } else {
+  
+    try{ if (elPauseBtn) elPauseBtn.textContent = "▶ 再開"; }catch(e){}
+} else {
     // Do NOT auto-resume to avoid accidental progress.
     // User can resume via the existing pause/resume control.
-    try { showFlash("good", "▶ 戻りました。再開するには「結果を見る（一時停止）」を押してね"); } catch(e) {}
+    try { showFlash("good", "▶ 戻りました。再開するには「▶ 再開」を押してね"); } catch(e) {}
   }
 });
 
@@ -1018,7 +1195,9 @@ setInterval(()=>{
     if (idleMs >= IDLE_LIMIT_MS){
       isPaused = true;
       __idlePaused = true;
-      const sec = Math.round(IDLE_LIMIT_MS/1000);
+      
+      try{ if (elPauseBtn) elPauseBtn.textContent = "▶ 再開"; }catch(e){}
+const sec = Math.round(IDLE_LIMIT_MS/1000);
       try { showFlash("bad", `⏸ ${sec}秒操作がないので自動停止（クリック/キーで再開）`); } catch(e) {}
     }
   }catch(e){}
@@ -1044,7 +1223,9 @@ setInterval(()=>{
     overlayDepth++;
     // 一時停止（タイマーtickは isPaused を見て止まる）
     isPaused = true;
-    panelEl.style.display = "block";
+    
+    try{ if (elPauseBtn) elPauseBtn.textContent = "▶ 再開"; }catch(e){}
+panelEl.style.display = "block";
   }
 
   function closeOverlay(panelEl){
@@ -1055,9 +1236,11 @@ setInterval(()=>{
     if (overlayDepth === 0 && wasRunningBeforeOverlay && !overlayRequireManualResume){
       isPaused = false;
       scheduleTimer(pausedRemain ?? secondsPerQ);
-    } else if (overlayDepth === 0) {
+    
+      try{ if (elPauseBtn) elPauseBtn.textContent = "⏸ 一時停止"; }catch(e){}
+} else if (overlayDepth === 0) {
       // パネル内でセット操作などをした場合は、閉じても自動再開しない
-      // 再開はユーザーが「結果を見る（一時停止）」ボタンで行う
+      // 再開はユーザーが「結果を見る」ボタンで行う
       wasRunningBeforeOverlay = false;
     }
   }
@@ -1751,7 +1934,7 @@ function reviewStorageKey(){ return reviewStorageKeyFor(CURRENT_CSV_HASH); }
     if (_wasPaused) {
       // 一時停止中に復習セットを保存した場合は、勝手に再開しない
       needsResetAfterOverlayAction = true; // 再開時に反映する
-      showFlash("good", "復習セットを保存したよ（中断のまま）。再開するときは「結果を見る（一時停止）」を押してね");
+      showFlash("good", "復習セットを保存したよ（中断のまま）。再開するときは「結果を見る」を押してね");
       return;
     }
     resetGame();
@@ -1765,7 +1948,7 @@ function reviewStorageKey(){ return reviewStorageKeyFor(CURRENT_CSV_HASH); }
     const _wasPaused = isPaused;
     if (_wasPaused) {
       needsResetAfterOverlayAction = true;
-      showFlash("good", "復習をクリアしたよ（中断のまま）。再開するときは「結果を見る（一時停止）」を押してね");
+      showFlash("good", "復習をクリアしたよ（中断のまま）。再開するときは「結果を見る」を押してね");
       return;
     }
     resetGame();
@@ -2004,6 +2187,7 @@ function reviewStorageKey(){ return reviewStorageKeyFor(CURRENT_CSV_HASH); }
     askedCount++;
 
     ensureStat(current).seen++;
+    try{ dailyInc('seen', 1); }catch(e){}
     scheduleSaveStats();
 
     locked = false;
@@ -2259,6 +2443,7 @@ function reviewStorageKey(){ return reviewStorageKeyFor(CURRENT_CSV_HASH); }
       st.wrongChoices.add(selected);
     }
     scheduleSaveStats();
+    try{ dailyInc(isCorrect ? 'correct' : 'wrong', 1); }catch(e){}
 
     if (isCorrect) {
       correct++;
@@ -2312,6 +2497,7 @@ function reviewStorageKey(){ return reviewStorageKeyFor(CURRENT_CSV_HASH); }
 
     const st = ensureStat(current);
     st.skip++;
+    try{ dailyInc('skip', 1); }catch(e){}
     scheduleSaveStats();
 
     const ans = getAnswerText(current);
@@ -2403,8 +2589,7 @@ function reviewStorageKey(){ return reviewStorageKeyFor(CURRENT_CSV_HASH); }
   function pauseGame() {
     if (isPaused) return;
     isPaused = true;
-    showResults();
-    showFlash("good", "一時停止中（結果を表示）");
+    showFlash("good", "⏸ 一時停止中");
   }
 
   function resumeGame() {
@@ -2420,25 +2605,72 @@ function reviewStorageKey(){ return reviewStorageKeyFor(CURRENT_CSV_HASH); }
   elSkip.addEventListener("click", () => handleSkip(false));
   elRestart.addEventListener("click", () => resetGame());
 
-  elPauseResults.addEventListener("click", () => {
-    if (!isPaused) { pauseGame(); return; }
+  // Daily log UI
+  const elToggleDailyPanel = document.getElementById("toggleDailyPanel");
+  const elDailyPanel = document.getElementById("dailyPanel");
+  const elResetToday = document.getElementById("resetToday");
+
+  elToggleDailyPanel?.addEventListener("click", () => {
+    if(!elDailyPanel) return;
+    const on = elDailyPanel.style.display !== "none";
+    elDailyPanel.style.display = on ? "none" : "block";
+    // 開いた瞬間に最新表示
+    try{ renderDailyUI(); }catch(e){}
+    if(!on) showFlash("good", "学習履歴を表示したよ");
+  });
+
+  elResetToday?.addEventListener("click", () => {
+    if(!confirm("このCSVの「今日の学習ログ」を0に戻す？（通算ランキングは消えません）")) return;
+    try{
+      const date = jstDateKey();
+      DAILY = { date, seen:0, correct:0, wrong:0, skip:0, updatedAt:0 };
+      localStorage.setItem(dailyKeyFor(CURRENT_CSV_HASH, date), JSON.stringify(DAILY));
+      upsertTodayInHistory();
+      renderDailyUI();
+      showFlash("good", "今日の学習ログをリセットしたよ");
+    }catch(e){
+      showFlash("bad", "リセットに失敗したかも");
+    }
+  });
+
+  // 日付が変わったら自動で切り替え（タブを開いたままでもOK）
+  setInterval(()=>{ try{
+    const t = jstDateKey();
+    if(DAILY && DAILY.date && DAILY.date !== t){
+      loadDailyForCurrent();
+    }
+  }catch(e){} }, 5000);
+
+  elShowResultsBtn.addEventListener("click", () => {
+    // 結果を見る時は停止状態にする（閉じても自動再開しない）
+    if (!isPaused) {
+      pauseGame();
+      elPauseBtn.textContent = "▶ 再開";
+    }
+    showResults();
+    showFlash("good", "📊 結果を表示（停止中）");
+  });
+
+  elPauseBtn.addEventListener("click", () => {
+    if (!isPaused) {
+      pauseGame();
+      elPauseBtn.textContent = "▶ 再開";
+      return;
+    }
     // パネル内で復習セット更新/読み込みをした後は、ここで初めてスタート（reset）する
     if (needsResetAfterOverlayAction) {
       needsResetAfterOverlayAction = false;
+      elPauseBtn.textContent = "⏸ 一時停止";
       resetGame();
       return;
     }
     resumeGame();
+    elPauseBtn.textContent = "⏸ 一時停止";
   });
-  function handleCloseResultClick(){
+function handleCloseResultClick(){
+    elResultPanel.style.display = "none";
     if (isPaused) {
-      if (needsResetAfterOverlayAction) {
-        showFlash("good", "再開は一時停止ボタンを押してね");
-        return;
-      }
-      resumeGame();
-    } else {
-      elResultPanel.style.display = "none";
+      showFlash("good", "結果を閉じたよ（停止中）");
     }
   }
   elCloseResult?.addEventListener("click", handleCloseResultClick);
@@ -2451,7 +2683,7 @@ elReviewMode.addEventListener("change", () => {
     // 中断中ならゲームは再開させない
     needsResetAfterOverlayAction = true;
     overlayRequireManualResume = true;
-    showFlash("good", "復習モードを変更したよ（中断のまま）。再開するときは「結果を見る（一時停止）」を押してね");
+    showFlash("good", "復習モードを変更したよ（中断のまま）。再開するときは「結果を見る」を押してね");
     return;
   }
 
@@ -2591,6 +2823,17 @@ elCsvFile.addEventListener("change", async (e) => {
 
       recordFilenameHash(filename, newHash, items.length);
 
+      // ===== Save as "last CSV" (restore on next open) =====
+      try{
+        localStorage.setItem(LAST_CSV_NAME_KEY, filename);
+        localStorage.setItem(LAST_CSV_HASH_KEY, newHash);
+        localStorage.setItem(LAST_CSV_ITEMS_KEY, JSON.stringify(items));
+        try{ const el = document.getElementById("lastCsvStatus"); if(el) el.textContent = `✅ 前回CSVとして保存: ${filename}`; }catch(e){}
+      }catch(e){
+        try{ const el = document.getElementById("lastCsvStatus"); if(el) el.textContent = "⚠️ 前回CSVの保存に失敗（容量上限の可能性）"; }catch(e){}
+      }
+
+
       elCsvStatus.textContent = `現在のCSV: ${CURRENT_CSV_NAME}（${items.length}語）`;
   try { if (typeof renderLangFilterOptions === "function") renderLangFilterOptions(); } catch(e) {}
       applyDeckFilter();
@@ -2603,6 +2846,7 @@ elCsvFile.addEventListener("change", async (e) => {
       updateReviewStatus();
       resetGame();
       renderHud();
+      try { loadDailyForCurrent(); } catch(e) {}
       showFlash("good", "CSVを反映したよ！");
     } catch (err) {
       if (String(err && err.message).includes("キャンセル")) {
@@ -2649,7 +2893,17 @@ try{
   });
 
 
-  // Keyboard shortcuts
+  
+  // Last CSV: forget button
+  try{
+    const elForgetLastCsv = document.getElementById("forgetLastCsv");
+    elForgetLastCsv?.addEventListener("click", () => {
+      if (!confirm("前回読み込んだCSVを忘れて、内蔵データに戻しますか？")) return;
+      forgetLastCsv();
+    });
+  }catch(e){}
+
+// Keyboard shortcuts
   window.addEventListener("keydown", (e) => {
     if (overlayDepth > 0) return;
     const k = e.key.toLowerCase();
@@ -2669,7 +2923,52 @@ try{
     window.speechSynthesis.onvoiceschanged = () => listVoices();
   }
 
-  // =========================
+  
+// ===== Last CSV persistence (mobile-friendly) =====
+// スマホでタブを閉じても「前回読み込んだCSV」を復元できるように保存します。
+// ※localStorage容量により、超巨大CSVは保存できない場合があります（その時は内蔵に戻ります）。
+const LAST_CSV_NAME_KEY  = "hamaru_last_csv_name";
+const LAST_CSV_HASH_KEY  = "hamaru_last_csv_hash";
+const LAST_CSV_ITEMS_KEY = "hamaru_last_csv_items";
+
+function tryRestoreLastCsv(){
+  try{
+    const itemsRaw = localStorage.getItem(LAST_CSV_ITEMS_KEY);
+    const name = localStorage.getItem(LAST_CSV_NAME_KEY) || "";
+    const hash = localStorage.getItem(LAST_CSV_HASH_KEY) || "";
+    if(!itemsRaw) return false;
+    const items = JSON.parse(itemsRaw);
+    if(!Array.isArray(items) || items.length < 4) return false;
+
+    // Restore
+    CURRENT_CSV_NAME = name || "前回のCSV";
+    CURRENT_CSV_HASH = hash || "restored";
+    WORDS_ALL = items;
+
+    // UI
+    try{ if (elCsvStatus) elCsvStatus.textContent = `現在のCSV: ${CURRENT_CSV_NAME}（${WORDS_ALL.length}語）`; }catch(e){}
+    try{ const el = document.getElementById("lastCsvStatus"); if(el) el.textContent = `✅ 前回のCSVを自動復元: ${CURRENT_CSV_NAME}`; }catch(e){}
+    return true;
+  }catch(e){
+    return false;
+  }
+}
+
+function forgetLastCsv(){
+  try{
+    localStorage.removeItem(LAST_CSV_ITEMS_KEY);
+    localStorage.removeItem(LAST_CSV_NAME_KEY);
+    localStorage.removeItem(LAST_CSV_HASH_KEY);
+  }catch(e){}
+  try{
+    const el = document.getElementById("lastCsvStatus");
+    if(el) el.textContent = "前回CSVを忘れました（内蔵データに戻します）";
+  }catch(e){}
+  // 内蔵へ戻すにはリロードが一番確実（状態/タイマー/ロックが絡むため）
+  try{ location.reload(); }catch(e){}
+}
+
+// =========================
   // Init
   // =========================
   applyDeckFilter();
@@ -2680,6 +2979,8 @@ try{
   elRateLabel.textContent = Number(elRate.value).toFixed(2);
   elVolLabel.textContent = Number(elVolume.value).toFixed(2);
   elCsvStatus.textContent = `現在のCSV: ${CURRENT_CSV_NAME}（${WORDS_ALL.length}語）`;
+
+  try { loadDailyForCurrent(); } catch(e) {}
 
   try { if (typeof renderLangFilterOptions === "function") renderLangFilterOptions(); } catch(e) {}
   // =========================
