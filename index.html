@@ -2968,13 +2968,54 @@ function forgetLastCsv(){
   try{ location.reload(); }catch(e){}
 }
 
+
+// 復元したCSVに合わせて、デッキ/成績/復習/学習ログ/UIをまとめて再同期
+function restoreAllFromLastCsvIfNeeded(){
+  const before = CURRENT_CSV_HASH;
+  const restored = tryRestoreLastCsv();
+  if(!restored) return false;
+
+  // ここで CURRENT_CSV_HASH / WORDS_ALL / CURRENT_CSV_NAME が復元済み
+  try{ applyDeckFilter(); }catch(e){}
+  try{ REVIEW_SET = []; }catch(e){}
+  try{ loadReviewFromStorage(); }catch(e){}
+  try{ loadStatsFromStorage(); }catch(e){}
+  try{ updateReviewStatus(); }catch(e){}
+  try{ if (typeof renderLangFilterOptions === "function") renderLangFilterOptions(); }catch(e){}
+  try{ loadDailyForCurrent(); }catch(e){}
+
+  // HUD更新
+  try{ renderHud(); }catch(e){}
+  return true;
+}
+
 // =========================
   // Init
   // =========================
-  applyDeckFilter();
-  loadReviewFromStorage();
-  loadStatsFromStorage();
-  updateReviewStatus();
+  // ✅ 前回CSVを最優先で復元（スマホの「戻る」「再表示」「再起動」対策）
+  const __restored = restoreAllFromLastCsvIfNeeded();
+
+  // bfcache（戻る/進むでページが「復帰」した時）にも復元をかける
+  window.addEventListener("pageshow", (ev) => {
+    try{
+      // persisted=true のときは bfcache から復帰
+      // persisted=false でも Android/Chrome は戻るで状態がズレることがあるので毎回チェックする
+      const ok = restoreAllFromLastCsvIfNeeded();
+      if(ok){
+        // 復元されたら、いったんゲームをリセットして整合性を取る
+        try{ resetGame(); }catch(e){}
+      }
+    }catch(e){}
+  });
+
+  if(!__restored){
+    // 復元できなかった場合は内蔵データで通常初期化
+    applyDeckFilter();
+    loadReviewFromStorage();
+    loadStatsFromStorage();
+    updateReviewStatus();
+  }
+
   listVoices();
   elRateLabel.textContent = Number(elRate.value).toFixed(2);
   elVolLabel.textContent = Number(elVolume.value).toFixed(2);
