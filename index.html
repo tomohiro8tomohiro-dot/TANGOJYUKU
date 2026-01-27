@@ -226,9 +226,7 @@
               <div class="inline">
                 <div class="small" id="modeLabel">日本語 → 英語（4択）</div>
                 <button class="btn smallbtn" type="button" id="speak">🔊 発音</button>
-                <button class="btn smallbtn" type="button" id="stopSpeak">⏹ 停止</button>
-                
-              </div>
+</div>
               <div class="big fit" id="prompt">---</div>
               <div class="small hint" id="ttsHint"></div>
             </div>
@@ -257,8 +255,7 @@
             <span class="kbd">1</span>〜<span class="kbd">4</span>で選択 /
             <span class="kbd">S</span>でスキップ /
             <span class="kbd">R</span>でリスタート /
-            <span class="kbd">P</span>で発音 /
-            <span class="kbd">X</span>で停止
+            <span class="kbd">P</span>で発音
           </div>
         </div>
       </div>
@@ -915,8 +912,7 @@ const elGlobalWeakThreshold = document.getElementById("globalWeakThreshold");
 
   // TTS
   const elSpeak = document.getElementById("speak");
-  const elStopSpeak = document.getElementById("stopSpeak");
-  const elAutoSpeak = document.getElementById("autoSpeak");
+    const elAutoSpeak = document.getElementById("autoSpeak");
   const elVoiceSelect = document.getElementById("voiceSelect");
   const elRate = document.getElementById("rate");
   const elRateLabel = document.getElementById("rateLabel");
@@ -2866,9 +2862,7 @@ elCsvFile.addEventListener("change", async (e) => {
   elRate.addEventListener("input", () => elRateLabel.textContent = Number(elRate.value).toFixed(2));
   elVolume.addEventListener("input", () => elVolLabel.textContent = Number(elVolume.value).toFixed(2));
   elSpeak.addEventListener("click", () => speakCurrent());
-  elStopSpeak.addEventListener("click", () => stopSpeech());
-
-  // Force clear TTS lock (for rare stuck states)
+// Force clear TTS lock (for rare stuck states)
   const elClearTtsLock = document.getElementById("clearTtsLock");
   elClearTtsLock?.addEventListener("click", () => {
     try{ window.speechSynthesis && window.speechSynthesis.cancel(); }catch(e){}
