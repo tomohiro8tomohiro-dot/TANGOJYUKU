@@ -10,9 +10,11 @@
 :root { --vh: 1vh; }
 
 /* 画面全体を使う所は 100vh ではなくこれ */
-.appHeight {
-  min-height: calc(var(--vh) * 100);height: calc(var(--vh) * 100);
+.appHeight{
+  /* 画面高の基準は min-height だけにして、内容が増えたら自然にスクロールできるようにする */
+  min-height: calc(var(--vh) * 100);
 }
+html, body{ height:auto; }
 
 
     body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans JP", sans-serif;
@@ -173,6 +175,62 @@
   h1{ margin-bottom: 6px; }
 }
 
+
+    /* Custom Deck layout (stacked like left screenshot) */
+
+/* Custom Deck: left form + right list (like screenshot) */
+#customDeckPanel .cd-layout{
+  display:grid;
+  grid-template-columns: 420px 1fr;
+  gap: 14px;
+  align-items:start;
+}
+#customDeckPanel .cd-left{ min-width: 260px; }
+#customDeckPanel .cd-right{
+  min-width: 0;
+}
+#customDeckPanel .cd-right .cardlike{
+  background: rgba(255,255,255,.03);
+  border: 1px solid rgba(255,255,255,.07);
+  border-radius: 14px;
+  padding: 10px;
+}
+#customDeckPanel .cd-right table{ width:100%; }
+@media (max-width: 860px){
+  #customDeckPanel .cd-layout{ grid-template-columns: 1fr; }
+}
+.cd-row{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+  align-items:stretch;
+}
+
+.cd-field{
+  width:100%;
+  min-width:0;
+}
+
+.cd-field.small,
+.cd-field.mid{ max-width:none; }
+
+.cd-actions{
+  display:flex;
+  gap:10px;
+  flex-wrap:wrap;
+  align-items:center;
+}
+
+.cd-actions .btn.primary{ background:rgba(56,217,150,.18); border:1px solid rgba(56,217,150,.45); }
+.cd-actions .btn.danger{ background:rgba(255,92,122,.12); border:1px solid rgba(255,92,122,.45); }
+.cd-note{ font-size:12px; color:rgba(232,238,255,.75); }
+
+@media (max-width: 520px){
+  .cd-actions .btn{ width:100%; }
+  .cd-actions .btn.half{ width:48%; }
+}
+
+
 </style>
 </head>
 
@@ -201,7 +259,7 @@
         <div class="question">
           <!-- 結果パネル -->
           <div id="resultPanel" class="card" style="display:none;margin-top:12px;">
-            <div class="inline" style="justify-content:space-between;align-items:center;">
+            <div class="inline" style="justify-content:flex-start;align-items:center;gap:10px;flex-wrap:wrap;">
               <h1>結果（間違えた順）</h1>
               <button class="btn smallbtn" type="button" id="closeResultTop">閉じる</button>
             </div>
@@ -295,6 +353,22 @@
 
         <div class="spacer"></div>
 
+
+        <div class="card" style="background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.08);">
+          <h1 style="font-size:16px;margin:0 0 8px;">✍️ 自作単語帳</h1>
+          <div class="small" style="opacity:.92;">
+            このアプリだけで単語を追加・編集できます（端末内に保存）。
+          </div>
+          <div class="inline" style="margin-top:10px; gap:8px; flex-wrap:wrap;">
+<button class="btn smallbtn" type="button" id="openCustomDeck">自作単語帳を開く</button>
+            <button class="btn smallbtn" type="button" id="useCustomDeckQuick">自作単語帳を使う</button>
+          </div>
+          <div class="small" style="margin-top:8px; opacity:.85;"
+            ><span class="small" style="opacity:.75;">v68</span> • <span id="customDeckHint" style="margin-top:8px; opacity:.85;"></span></div>
+        </div>
+
+
+
         <div class="settings">
           <label class="small">1問の時間（秒）</label>
           <input id="secondsPerQ" type="number" min="1" max="30" step="0.5" value="6" />
@@ -352,12 +426,19 @@
           <label class="small">デッキ</label>
           <select id="deckSelect">
             <option value="all">全部</option>
-            <option value="1">Lv1</option>
-            <option value="2">Lv2</option>
-            <option value="3">Lv3</option>
-            <option value="12">Lv1+Lv2</option>
-            <option value="23">Lv2+Lv3</option>
+            <option value="1">Lv68</option>
+            <option value="2">Lv68</option>
+            <option value="3">Lv68</option>
+            <option value="12">Lv68+Lv68</option>
+            <option value="23">Lv68+Lv68</option>
           </select>
+            <div class="small" style="margin-top:10px;">出題モード</div>
+            <select id="quizMode" style="width:100%;margin-top:6px;">
+              <option value="single">単独（いまの単語帳だけ）</option>
+              <option value="mix">ミックス（内蔵データ＋いまの単語帳）</option>
+            </select>
+            <div class="small" style="opacity:.8;margin-top:6px;">※単語が4つ未満でも、ミックスなら出題できる場合があります</div>
+
         </div>
         <div class="small" id="deckStatus" style="margin-top:8px;opacity:.9;"></div>
 
@@ -538,6 +619,65 @@
 
 
 <script>
+  // =============================
+  // Auto Lv (1〜5) by CEFR-J Vocabulary Profile
+  // Source: openlanguageprofiles/olp-en-cefrj (CEFR-J Vocabulary Profile ver 1.5)
+  // Terms of use: research & commercial OK with proper citation; copyright: Tono Laboratory, TUFS.
+  const __CEFRJ_DICT_NAME = "CEFR-J VP 1.5";
+  const __CEFRJ_LV = {"'m":1,"'re":1,"'s":1,"a":1,"a.m.":1,"abandon":4,"abandoned":4,"ability":2,"able":2,"abnormal":3,"abnormally":4,"aboard":3,"abolish":5,"aboriginal":4,"aborigine":3,"abortion":5,"about":1,"above":1,"abroad":2,"abruptly":4,"absence":5,"absent":5,"absentee":4,"absolute":4,"absolutely":3,"absolutely adv.academic":3,"absorb":4,"abstract":4,"absurd":5,"abundance":5,"abundant":3,"abuse":5,"academic":4,"academy":5,"accelerate":5,"accent":4,"accept":2,"acceptable":4,"acceptance":5,"access":3,"accessibility":4,"accessible":5,"accessory":3,"accident":2,"accidental":3,"accidentally":4,"accommodate":4,"accommodation":3,"accompany":4,"accomplish":4,"accomplishment":5,"accordance":5,"according to":2,"accordingly":5,"account":3,"accountability":5,"accountable":5,"accountant":4,"accumulate":5,"accumulation":5,"accuracy":4,"accurate":4,"accurately":4,"accusation":5,"accuse":4,"accused":5,"accustom":3,"ache":3,"achievable":4,"achieve":2,"achievement":3,"acid":4,"acknowledge":4,"acknowledgement":3,"acknowledgment":3,"acquaintance":3,"acquire":4,"acquisition":5,"acre":5,"across":1,"act":2,"action":1,"activate":4,"activation":5,"active":2,"actively":4,"activity":1,"actor":1,"actress":1,"actual":4,"actually":2,"acute":5,"ad":3,"adapt":4,"adaptable":4,"adaptation":5,"add":1,"addict":4,"addicted":4,"addiction":4,"addition":3,"additional":4,"additionally":4,"address":1,"addressee":3,"adequate":4,"adequately":4,"adhere":5,"adj.":1,"adjacent":5,"adjective":2,"adjust":4,"adjustment":5,"administer":5,"administration":4,"administrative":5,"administrator":5,"admirable":4,"admiration":3,"admire":3,"admiringly":4,"admission":5,"admit":3,"admittedly":4,"adolescent":5,"adopt":4,"adopted":4,"adoption":5,"adorable":3,"adore":4,"adorn":4,"adult":1,"advance":4,"advanced":3,"advancement":4,"advantage":2,"advent":4,"adventure":2,"adventurous":4,"adverb":3,"adverbial":3,"adverse":5,"adversely":4,"adversity":4,"advert":3,"advertise":2,"advertisement":2,"advertising":2,"advice":1,"advise":3,"adviser":3,"advisor":3,"advocate":5,"aerobics":3,"aeroplane":1,"aesthetic":5,"affair":4,"affect":2,"affection":5,"affectionate":4,"affectionately":4,"afford":3,"affordable":4,"afraid":1,"after":1,"aftermath":5,"afternoon":1,"afterward":3,"afterwards":4,"again":1,"against":2,"age":1,"aged":3,"ageless":4,"agency":4,"agenda":4,"agent":3,"aggression":5,"aggressive":4,"aggressively":4,"ago":1,"agonise":4,"agonize":4,"agony":4,"agree":1,"agreement":3,"agricultural":5,"agriculture":4,"ah":2,"ahead":3,"aid":4,"aide":5,"aids":4,"aim":3,"aim v. ,":3,"air":1,"air conditioning":3,"air force":3,"aircraft":4,"aircrew":4,"airline":2,"airplane":1,"airport":1,"aisle":2,"alarm":3,"alarm clock":2,"albeit":5,"album":3,"alcohol":3,"alcoholic":3,"alcoholism":4,"alert":4,"alert v. ,":5,"alien":4,"align":5,"alignment":5,"alike":3,"alike adv. ,":5,"alive":2,"all":1,"all right":1,"all right adj./adv. ,":2,"allegation":5,"allege":5,"allegedly":5,"allergic":3,"alliance":5,"allocate":5,"allocation":5,"allow":2,"allowance":5,"ally":5,"almost":2,"alone":2,"along":2,"alongside":4,"aloud":3,"alphabet":3,"alphabetical":4,"already":2,"alright":2,"also":1,"altar":4,"alter":4,"alternate":4,"alternative":2,"alternatively":4,"although":2,"altitude":4,"altogether":4,"aluminium":5,"aluminum":4,"always":1,"am":1,"amateur adj. ,":5,"amaze":4,"amazed":3,"amazement":4,"amazing":1,"amazingly":4,"ambassador":5,"ambiguity":4,"ambiguous":4,"ambition":3,"ambitious":3,"ambulance":4,"amend":5,"amendment":5,"amid":5,"ammonia":4,"among":2,"amongst":4,"amount":2,"ample":4,"amplifier":4,"amplify":4,"amuse":4,"amused":2,"amusement":2,"amusing":4,"an":1,"analogy":5,"analyse":3,"analysis":3,"analyst":4,"analyze":3,"ancestor":4,"anchor":5,"anchorage":4,"anchorman":4,"anchorperson":4,"ancient":2,"and":1,"angel":5,"anger":4,"angle":3,"angrily":2,"angry":1,"anguish":4,"animal":1,"animate":4,"animated":3,"animation":4,"ankle":2,"anniversary":4,"announce":3,"announcement":3,"annoy":3,"annoyance":3,"annoyed":3,"annoying":3,"annual":4,"annually":4,"anonymous":5,"another":1,"answer":1,"ant":3,"anti":3,"antiaircraft":4,"antibacterial":4,"anticancer":4,"anticipate":4,"anticipation":4,"antipollution":4,"antique":3,"antistatic":4,"antivirus":4,"antonym":3,"anxiety":4,"anxious":4,"anxiously":3,"any":1,"any adv.anybody":2,"any more":2,"anybody":1,"anyhow":3,"anymore":2,"anyone":1,"anything":1,"anyway":2,"anywhere":2,"anywhere adv. ,":2,"apart":3,"apartment":1,"ape":3,"apologise":2,"apologize":3,"apology":4,"apostrophe":4,"app":2,"apparatus":5,"apparent":4,"apparently":4,"appeal":4,"appealing":5,"appear":2,"appearance":2,"appetite":5,"applaud":5,"applause":3,"apple":1,"applicable":5,"applicant":4,"application":3,"apply":2,"appoint":5,"appointment":3,"appreciate":3,"appreciation":5,"appreciative":4,"approach":4,"appropriate":4,"appropriately":4,"approval":4,"approve":4,"approximate":4,"approximately":3,"april":1,"apron":1,"arbitrary":5,"arch":4,"archaeologist":4,"archeologist":4,"architect":2,"architectural":5,"architecture":2,"archive":5,"arctic":4,"are":1,"area":1,"arena":5,"arguably":5,"argue":2,"argument":2,"arise":4,"aristocracy":4,"arithmetic":3,"arm":1,"armchair":2,"armed":4,"armful":4,"arms":4,"army":2,"around":1,"arouse":4,"arrange":2,"arrangement":2,"array":5,"arrest":3,"arrest v. ,":3,"arrival":3,"arrive":1,"arrogant":4,"arrow":4,"art":1,"artery":4,"article":1,"articulate":5,"artificial":4,"artificially":4,"artist":1,"artistic":4,"artistry":4,"artwork":4,"as":1,"as adv. ,":2,"ash":5,"ashamed":4,"aside":4,"ask":1,"asleep":2,"aspect":4,"aspiration":5,"aspire":5,"aspirin":3,"assassination":5,"assault":5,"assemble":5,"assembly":5,"assert":5,"assertion":5,"assess":4,"assessment":4,"asset":4,"assign":4,"assignment":3,"assist":3,"assistance":4,"assistant":2,"associate":4,"associated":4,"association":4,"assume":4,"assumption":4,"assurance":5,"assure":4,"astonish":4,"astonished":4,"astonishing":4,"astonishment":4,"astronaut":2,"astronomer":3,"astronomy":4,"asylum":5,"at":1,"athlete":2,"athletic":3,"athletics":4,"atlantic":3,"atmosphere":3,"atom":2,"atomic":3,"attach":3,"attached":4,"attachment":4,"attack":2,"attain":5,"attainable":4,"attainment":4,"attempt":4,"attend":2,"attendance":5,"attention":2,"attention n. ,":2,"attentive":4,"attentively":4,"attitude":3,"attorney":5,"attract":3,"attraction":3,"attractive":2,"attractiveness":4,"attribute":4,"attribute v. ,":5,"atypical":4,"aubergine":4,"auction":4,"audience":2,"audio":4,"audit":5,"audition":4,"august":1,"aunt":1,"authentic":5,"author":2,"authorise":4,"authoritative":4,"authority":3,"authorize":5,"auto":5,"automatic":4,"automatically":4,"autonomy":5,"autumn":1,"auxiliary":3,"availability":5,"available":2,"avenue":3,"average":3,"average adj. ,":2,"avoid":2,"await":5,"awake":1,"award":2,"aware":3,"awareness":4,"away":1,"awe":4,"awesome":3,"awful":2,"awkward":4,"ax":4,"axe":4,"axis":4,"baby":1,"babysit":3,"babysitter":3,"back":1,"backache":3,"backdrop":5,"background":2,"backing":5,"backpack":3,"backpacker":3,"backpacking":3,"backup":5,"backward":4,"backwards":3,"backyard":4,"bacon":3,"bacteria":4,"bad":1,"bad-tempered":4,"badge":4,"badly":2,"badminton":2,"bag":1,"baggage":3,"bail":5,"bake":3,"baker":3,"bakery":3,"balance":3,"balanced":4,"balcony":2,"bald":3,"balky":4,"ball":1,"ballad":4,"ballet":4,"balloon":4,"ballot":5,"ban":4,"ban v. ,":3,"banana":1,"band":1,"bandage":3,"bang":3,"bank":1,"bank (money)":1,"bank (river)":3,"bank account":3,"banker":4,"banking":2,"bankrupt":4,"bankruptcy":4,"banner":5,"bar":2,"barbecue":2,"barber":2,"barbershop":4,"bare":5,"barely":4,"bargain":4,"bark":3,"barley":4,"barman":3,"barn":4,"barometer":4,"barrel":5,"barren":4,"barrier":4,"bartender":4,"base":3,"baseball":2,"based":2,"basement":4,"basic":3,"basically":4,"basin":3,"basis":3,"basket":4,"basketball":2,"bass 1":5,"bat":4,"batch":2,"bath":1,"bathe":3,"bathhouse":4,"bathroom":1,"battery":3,"battle":3,"battlefield":5,"bay":5,"be":1,"be v. ,":1,"beach":1,"beagle":4,"beak":4,"beam":5,"bean":2,"bear":1,"bear (animal)":2,"bear (deal with)":4,"beard":3,"bearing":4,"beast":5,"beat":2,"beautiful":1,"beautifully":3,"beautify":4,"beauty":3,"beaver":3,"because":1,"because of":3,"become":1,"bed":1,"bedroom":1,"bedside":3,"bee":3,"beef":2,"been":2,"beer":1,"before":1,"beg":4,"begin":1,"beginner":2,"beginning":1,"behalf":5,"behave":2,"behavior":2,"behaviour":2,"behind":1,"being":4,"belief":3,"believe":1,"bell":3,"bellow":4,"belly":2,"belong":2,"belongings":4,"beloved":5,"below":1,"below adv. ,":1,"belt":2,"bench":5,"benchmark":5,"bend":2,"bend v. ,":3,"beneath":5,"beneficial":4,"beneficiary":5,"benefit":2,"benevolence":4,"benevolent":4,"bent":4,"berry":4,"beside":4,"besides":4,"best":1,"best adv. ,":2,"bestow":4,"bestseller":4,"bet":3,"bet v. ,":4,"betray":5,"better":1,"between":1,"bewilder":4,"bewilderment":4,"beyond":4,"bias":4,"bicycle":1,"bid":4,"bidding":4,"big":1,"bike":1,"bikini":4,"bilingual":3,"bill":1,"billion":2,"bin":2,"bind":5,"bio":4,"biochemistry":3,"biography":5,"biological":4,"biology":2,"biotechnology":4,"bird":1,"birdcage":4,"birth":2,"birthday":1,"birthplace":4,"biscuit":2,"bishop":5,"bit":2,"bite":2,"bitter":4,"bitterly":4,"bizarre":5,"black":1,"black adj. ,":1,"blackboard":2,"blade":5,"blame":2,"blame v. ,":4,"blank":1,"blank adj. ,":2,"blanket":4,"blast":5,"blaze":4,"bleed":5,"blend":3,"blend v. ,":5,"bless":5,"blessing":5,"blind":4,"blindly":4,"blindness":4,"blink":4,"block":3,"blog":1,"blogger":3,"blonde":1,"blood":2,"bloodstream":4,"bloody":4,"bloom":2,"blooming":4,"blossom":4,"blow":2,"blue":1,"blue adj. ,":1,"blur":4,"blurt":4,"blush":3,"board":2,"board game":2,"boast":5,"boat":1,"body":1,"boil":2,"boiled":2,"boiling":4,"bold":4,"boldly":3,"bolt":4,"bomb":3,"bombard":4,"bomber":4,"bombing":4,"bond":4,"bone":2,"bonus":5,"bony":4,"book":1,"bookcase":2,"booking":4,"bookish":4,"booklet":4,"bookmark":4,"bookshelf":2,"bookshop":2,"bookstore":1,"boom":5,"boost":4,"boost v. ,":4,"boot":1,"booth":4,"border":3,"bore":3,"bored":1,"boredom":3,"boring":1,"born":1,"borrow":2,"boss":2,"bossy":4,"botany":4,"both":1,"bother":3,"bothered":4,"bothersome":4,"bottle":1,"bottom":2,"bounce":5,"bound":4,"boundary":5,"bourbon":4,"bow":3,"bow 1 v.,":5,"bowl":2,"box":1,"boxer":4,"boxing":3,"boy":1,"boyfriend":1,"bra":2,"bracelet":3,"bracket":4,"brag":4,"brain":2,"brainstorm":2,"brainstorming":3,"brake":2,"branch":3,"brand":3,"brand-new":3,"brass":3,"brave":3,"bravely":3,"bravery":4,"breach":5,"bread":1,"break":1,"break v. ,":1,"breakable":4,"breakdown":5,"breakfast":1,"breakthrough":5,"breakup":4,"breast":4,"breath":3,"breathe":3,"breathing":3,"breathless":3,"breathtaking":4,"breed":3,"breed v. ,":5,"breeding":3,"breeze":2,"breezy":4,"brewery":4,"brick":4,"bride":3,"bridge":2,"brief":4,"briefly":4,"bright":2,"brightly":3,"brilliant":2,"brilliantly":4,"bring":1,"broad":4,"broadband":5,"broadcast":3,"broadcast v. ,":4,"broadcaster":4,"broaden":4,"broadly":4,"broccoli":3,"brochure":4,"broken":2,"bronze":3,"brother":1,"brother-in-law":4,"brotherhood":3,"brown":1,"brown adj. ,":1,"browse":4,"browser":5,"bruise":4,"brush":1,"brush v. ,":2,"brutal":5,"bubble":3,"buck":5,"bucket":1,"bud":4,"buddy":5,"budget":4,"buffer":5,"bug":4,"build":1,"builder":3,"building":1,"bulb":2,"bulimia":4,"bulk":5,"bull":3,"bullet":4,"bulletin":3,"bully":4,"bum":4,"bump":3,"bumper":4,"bun":4,"bunch":4,"burden":5,"burdensome":4,"bureau":3,"bureaucracy":5,"burger":1,"burglar":3,"burglary":4,"burgle":4,"burial":5,"burn":2,"burning":3,"burst":5,"bury":3,"bus":1,"bus station":2,"bus stop":2,"bush":4,"business":1,"businessman":2,"businesswoman":2,"bust":3,"bustle":4,"bustling":4,"busy":1,"but":1,"butcher":3,"butter":1,"butterfly":1,"button":2,"buy":1,"buyer":3,"buzz":4,"by":1,"bye":1,"cab":2,"cabbage":3,"cabin":4,"cabinet":5,"cable":4,"cafe":1,"cafeteria":2,"café":1,"cage":3,"cake":1,"calculate":4,"calculation":5,"calculator":3,"calendar":2,"calf":3,"call":1,"call v. ,":1,"caller":3,"calm":3,"calm adj. , v.,":3,"calmly":4,"calmness":3,"camel":3,"camera":1,"camp":2,"campaign":3,"camping":2,"campsite":3,"campus":3,"can":1,"can1":1,"can2":2,"canal":4,"cancel":4,"cancer":4,"candidate":3,"candle":4,"candy":1,"cane":4,"canned":3,"cannonball":4,"canon":4,"canteen":3,"canvas":5,"cap":3,"capability":5,"capable":4,"capacity":4,"capital":1,"capital letter":2,"capitalism":5,"capitalist adj.cargo":5,"capsule":3,"captain":3,"caption":4,"captive":4,"capture":3,"capture v. ,":4,"car":1,"car park":2,"caravan":4,"carbon":4,"carbon dioxide":4,"carbon footprint":4,"carbon monoxide":4,"card":1,"cardboard":4,"cardigan":4,"care":2,"career":1,"carefree":4,"careful":2,"carefully":2,"careless":3,"carelessly":3,"carelessness":3,"caring":4,"carnival":4,"carpet":2,"carpool":4,"carriage":5,"carrot":1,"carry":1,"carton":3,"cartoon":2,"carve":5,"cascade":4,"case":2,"cash":2,"cashpoint":3,"casino":5,"cassette":2,"cast":4,"castle":2,"casual":4,"casually":4,"casualty":5,"cat":1,"catalog":4,"catalogue":5,"catalyst":4,"catastrophe":4,"catastrophic":4,"catch":2,"catchy":4,"categorisation":4,"categorise":3,"categorization":4,"categorize":3,"category":3,"cater":5,"catering":4,"cathedral":4,"cattle":5,"cause":2,"caution":5,"cautious":5,"cave":4,"cd":1,"cd player":1,"cd-rom":3,"cease":5,"ceiling":3,"celebrate":2,"celebration":3,"celebrity":2,"cell":4,"cellar":4,"cellist":4,"cello":4,"cemetery":5,"cent":1,"center":2,"centigrade":4,"centimeter":2,"centimetre":2,"central":3,"central heating":3,"centre":1,"century":1,"cereal":2,"ceremony":3,"certain":2,"certainly":2,"certainty":4,"certificate":4,"certification":4,"certify":4,"chain":3,"chair":1,"chairman":4,"challenge":3,"challenging":4,"chamber":5,"champagne":2,"champion":3,"championship":4,"chance":2,"chancellor":4,"change":1,"change v. ,":1,"channel":3,"chaos":5,"chaotic":4,"chapter":3,"character":2,"characterise":3,"characteristic":4,"characterize":5,"charge":3,"chariot":3,"charity":2,"charm":5,"charming":4,"chart":1,"chart v.chief adj. ,":4,"charter":5,"chase":3,"chase v. ,":4,"chat":2,"chat show":3,"chat v. ,":2,"cheap":1,"cheat":4,"cheat v. ,":3,"check":1,"check-in":3,"check-in counter":3,"check-in desk":3,"checkout":3,"checkpoint":4,"cheek":4,"cheeky":4,"cheer":2,"cheer v. ,":4,"cheerful":3,"cheerfully":4,"cheerfulness":4,"cheese":1,"chef":2,"chemical":2,"chemical adj. ,":3,"chemist":3,"chemistry":2,"chemotherapy":4,"cheque":2,"cherish":3,"cherished":4,"cherry":4,"chess":2,"chest":3,"chest of drawers":3,"chew":4,"chewing gum":3,"chicken":1,"chief":3,"child":1,"childhood":3,"childish":4,"chili":2,"chilli":2,"chimney":4,"chimpanzee":2,"chin":2,"chip":2,"chirp":2,"chocolate":1,"choice":2,"choir":4,"choke":3,"choose":1,"chop":4,"christian":3,"chronic":5,"chronological":3,"chuckle":3,"chunk":5,"church":2,"cigarette":2,"cinema":1,"circle":2,"circuit":4,"circuitry":4,"circular":3,"circulate":5,"circulation":5,"circumstance":4,"circus":3,"cite":4,"citizen":4,"citizenship":5,"city":1,"citywide":4,"civic":5,"civil":4,"civilian":5,"civilisation":3,"civilization":4,"claim":2,"claim v. ,":3,"clam":4,"clap":4,"clarify":4,"clarity":5,"clash":5,"class":1,"classic":2,"classic adj. ,":4,"classical":2,"classical music":2,"classification":5,"classify":4,"classmate":1,"classroom":1,"clause":3,"clean":1,"clean adj. ,":1,"cleaner":2,"clear":2,"clearly":2,"clearness":4,"clerical":4,"clerk":4,"clever":2,"click":2,"click v. ,":3,"client":3,"cliff":4,"climate":2,"climate change":4,"climb":1,"climber":3,"climbing":2,"cling":5,"clinic":4,"clinical":5,"clip":4,"clock":1,"clog":4,"clone":2,"close 1":1,"closed":2,"closely":4,"closure":5,"cloth":3,"clothes":1,"clothing":2,"cloud":2,"cloudy":1,"clown":2,"club":1,"clue":3,"clumsy":4,"cluster":5,"coach":2,"coaching":4,"coal":3,"coalition":5,"coarse":4,"coast":2,"coastal":5,"coastline":4,"coat":1,"cocktail":5,"cocoa":4,"coconut":4,"cod":3,"code":2,"coffee":1,"coffin":3,"cognitive":5,"coherence":4,"coherent":4,"coin":3,"coincide":5,"coincidence":4,"coke":1,"cola":2,"cold":1,"cold adj. ,":1,"collaborate":5,"collaboration":5,"collapse":3,"collapse v. ,":4,"collar":3,"colleague":2,"collect":2,"collection":3,"collective":5,"collector":4,"college":1,"collision":5,"collocation":4,"colon":4,"colonial":5,"colony":4,"color":1,"colorful":2,"colour":1,"coloured":3,"colourful":4,"column":2,"columnist":5,"coma":4,"comb":2,"combat":5,"combination":4,"combine":3,"come":1,"comedian":3,"comedy":2,"comet":3,"comfort":4,"comfortable":2,"comfortably":4,"comic":2,"comic adj. ,":4,"comma":3,"command":4,"commander":4,"commemorate":4,"commence":5,"comment":2,"commentary":5,"commentator":5,"commerce":5,"commercial":3,"commercial adj. ,":3,"commission":4,"commissioner":5,"commit":3,"commitment":4,"committee":4,"commodity":5,"common":1,"common sense":3,"commonly":4,"commonwealth":4,"communicate":2,"communication":3,"communicative":4,"communist":5,"community":2,"commute":4,"companion":5,"company":1,"comparable":5,"comparative":4,"compare":1,"comparison":3,"compassion":5,"compassionate":4,"compatible":4,"compel":5,"compelling":5,"compensate":5,"compensation":5,"compete":2,"competence":5,"competent":5,"competition":2,"competitive":3,"competitor":3,"compile":5,"complain":2,"complaint":3,"complement":5,"complete":2,"complete adj. ,":1,"completely":2,"completion":4,"complex":3,"complexion":4,"complexity":5,"compliance":5,"complicate":3,"complicated":4,"complication":5,"compliment":3,"comply":5,"component":4,"compose":4,"composer":4,"composition":5,"compound":4,"comprehension":4,"comprehensive":4,"compress":4,"compression":4,"comprise":4,"compromise":5,"compulsory":4,"compute":5,"computer":1,"conceal":5,"concede":5,"conceit":4,"conceivable":4,"conceive":4,"concentrate":3,"concentration":4,"concept":4,"conception":5,"concern":4,"concerned":4,"concerning":4,"concert":1,"concession":5,"conclude":3,"conclusion":3,"concrete":4,"concrete adj. ,":4,"condemn":5,"condition":2,"conduct":3,"conduct v. ,":4,"conductor":4,"cone":4,"confer":5,"conference":2,"conferencing":4,"confess":4,"confession":5,"confidence":4,"confident":3,"confidently":4,"configuration":5,"confine":5,"confirm":3,"confirmation":5,"conflict":4,"confront":5,"confrontation":5,"confuse":2,"confused":3,"confusing":4,"confusion":4,"congratulate":5,"congregation":5,"congressional":5,"conjunction":4,"connect":2,"connected":2,"connection":3,"connexion":3,"conquer":5,"conquest":4,"conscience":5,"conscious":4,"consciousness":5,"consecutive":5,"consensus":5,"consent":5,"consequence":3,"consequently":3,"consequently adv.conservation":4,"conservation":3,"conservative":3,"conservative adj. ,":4,"conserve":5,"consider":2,"considerable":4,"considerably":4,"consideration":4,"considering":4,"consist":3,"consistency":5,"consistent":4,"consistently":4,"consolation":4,"console":4,"consolidate":5,"consonant":3,"conspiracy":4,"constant":4,"constantly":4,"constituency":5,"constitute":5,"constitution":5,"constitutional":5,"constraint":5,"construct":4,"construction":4,"consult":4,"consultant":4,"consultation":5,"consume":3,"consumer":3,"consumption":4,"contact":3,"contain":2,"container":3,"contaminate":4,"contemplate":5,"contemporary":4,"contempt":5,"contend":5,"contender":5,"content 1":3,"contention":5,"contest":4,"context":2,"continent":2,"continual":3,"continually":5,"continue":2,"continuous":3,"continuously":3,"contract":4,"contractor":5,"contradict":4,"contradiction":5,"contradictory":4,"contrary":3,"contrary adj. ,":5,"contrast":3,"contribute":4,"contribution":4,"contributor":5,"control":2,"controversial":4,"controversy":4,"convenience":4,"convenient":3,"conveniently":4,"convention":4,"conventional":4,"conversation":1,"converse":4,"conversely":4,"conversion":5,"convert":4,"convey":4,"convict":5,"conviction":5,"convince":3,"convinced":4,"convincing":4,"cook":1,"cooker":2,"cookie":1,"cooking":1,"cool":1,"cooler":2,"cooperate":5,"cooperation":4,"cooperative":5,"coordinate":5,"coordination":5,"coordinator":5,"cop":5,"cope":4,"copper":5,"copy":2,"copyright":5,"coral":4,"core":4,"corn":1,"corner":2,"cornerstone":4,"cornet":4,"corona":4,"corporal":4,"corporate":4,"corporation":4,"correct":1,"correct adj. ,":1,"correction":5,"correctly":2,"correctness":4,"correlate":5,"correlation":5,"correspond":5,"correspondence":5,"correspondent":5,"corresponding":5,"corridor":4,"corrupt":5,"corruption":5,"cosiness":4,"cost":1,"costly":5,"costume":3,"cosy":4,"cottage":3,"cotton":3,"couch":1,"cough":3,"could":1,"council":4,"councillor":5,"counseling":3,"counselling":5,"counsellor":5,"count":2,"counter":3,"counter (argue against)":5,"counter (long flat surface)":4,"counterpart":5,"countless":5,"country":1,"countryman":4,"countryside":3,"countrywide":4,"county":4,"coup":5,"couple":2,"courage":4,"courageous":3,"courgette":3,"course":1,"court":3,"courtesy":5,"cousin":1,"cover":2,"coverage":4,"covered":3,"cow":1,"coward":4,"cowardly":4,"coziness":4,"cozy":4,"crab":4,"crack":4,"crack v. ,":4,"craft":4,"craftsman":4,"crash":4,"crater":4,"crawl":4,"crazy":2,"cream":1,"crease":4,"create":1,"creation":4,"creative":2,"creatively":4,"creativity":4,"creator":5,"creature":4,"credibility":5,"credible":5,"credit":2,"credit card":1,"creek":4,"creep":5,"creepy":4,"crew":4,"cricket":2,"crime":2,"criminal":2,"cripple":4,"crisis":4,"crisp":2,"criterion":4,"critic":4,"critical":4,"critically":4,"criticise":2,"criticism":4,"criticize":4,"critique":5,"crocodile":4,"crop":4,"cross":2,"cross v. ,":2,"crossing":3,"crossly":4,"crossroads":3,"crow":3,"crowd":2,"crowded":2,"crown":5,"crucial":4,"crude":5,"cruel":3,"cruelly":4,"cruelty":4,"cruise":4,"crush":5,"cry":2,"crystal":5,"crystallise":4,"crystallize":4,"cube":4,"cubism":4,"cucumber":3,"cue":4,"cuff":4,"culmination":4,"cult":5,"cultivate":5,"cultural":3,"culturally":4,"culture":1,"cup":1,"cupboard":2,"cure":3,"cure v. ,":4,"curiosity":5,"curious":4,"curiously":3,"curl":4,"curly":2,"currency":3,"current":3,"currently":3,"curriculum":4,"curry":2,"curse":2,"cursor":4,"curtain":3,"curve":4,"curved":4,"cushion":3,"custody":5,"custom":3,"customer":1,"customs":3,"cut":3,"cut v.dad":1,"cute":4,"cutting":5,"cv":3,"cyberaddict":4,"cybercafe":4,"cybercafé":4,"cybercrime":4,"cyberpet":4,"cyberschool":4,"cyberspace":4,"cycle":2,"cycling":2,"cyclist":4,"cynical":5,"dad":1,"daddy":1,"daft":4,"daily":2,"dairy":4,"daisy":3,"dam":5,"damage":3,"damaged":3,"damaging":5,"damn":4,"damp":3,"dance":1,"dancer":1,"dancing":1,"dandelion":4,"danger":2,"dangerous":1,"dangerously":3,"dare":4,"dark":1,"darkness":4,"darling":4,"dash":4,"data":2,"database":4,"date":1,"dated":4,"dating":3,"daughter":1,"daughter-in-law":4,"dawn":5,"day":1,"daylight":2,"daytime":4,"daze":3,"dazzle":3,"de facto":4,"dead":2,"deadline":4,"deadly":4,"deaf":3,"deal":2,"dealer":4,"dear":1,"dearly":4,"death":2,"debate":4,"debit":4,"debit card":4,"debris":5,"debt":4,"debut":5,"decade":3,"decay":4,"deceive":4,"december":1,"decent":4,"deceptive":4,"decide":1,"decision":2,"decision-making":5,"decisive":5,"deck":4,"declaration":5,"declare":4,"decline":3,"decomposition":4,"decorate":3,"decoration":4,"decorative":4,"decrease":3,"decrease v. ,":4,"dedicate":3,"dedicated":5,"dedication":5,"deduce":4,"deduction":4,"deed":5,"deem":5,"deep":2,"deeply":4,"deer":4,"default":5,"defeat":3,"defeat v. ,":4,"defect":5,"defence":4,"defend":4,"defender":4,"defense":3,"defensive":5,"deficiency":5,"deficit":5,"define":3,"definite":3,"definite article":3,"definitely":2,"definition":3,"deforestation":4,"defy":5,"degree":2,"dehumanise":4,"dehumanize":4,"delay":2,"delay v. ,":4,"delegate":5,"delegation":5,"delete":4,"deliberate":4,"deliberately":4,"delicacy":4,"delicate":5,"delicately":4,"delicious":1,"delight":3,"delight v. ,":4,"delighted":4,"delightful":3,"deliver":3,"delivery":4,"demand":4,"demanding":4,"democracy":4,"democratic":4,"demolish":4,"demon":5,"demonstrate":4,"demonstration":4,"denial":5,"denim":4,"denounce":5,"dense":5,"densely":4,"density":5,"dental":4,"dentist":2,"deny":4,"depart":4,"department":2,"department store":2,"departure":3,"depend":2,"dependable":4,"dependence":5,"dependent":4,"depict":5,"deploy":5,"deployment":5,"deposit":4,"depressed":4,"depressing":4,"depression":4,"deprive":5,"depth":4,"deputy":5,"derive":4,"descend":5,"descent":5,"describe":1,"description":1,"descriptive":4,"desert":2,"deserve":4,"design":1,"designate":5,"designer":2,"desirable":5,"desire":4,"desk":1,"desktop":5,"desolation":4,"despair":3,"desperate":4,"desperately":4,"desperation":4,"despise":4,"despite":3,"dessert":2,"destination":3,"destiny":4,"destroy":2,"destruction":4,"destructive":5,"detach":4,"detachment":4,"detail":1,"detailed":4,"detain":5,"detect":4,"detection":5,"detective":2,"detention":5,"deteriorate":5,"determination":4,"determine":3,"determined":3,"determiner":4,"devastate":5,"devastating":3,"develop":2,"developed":2,"developing":4,"development":3,"device":2,"devil":5,"devise":5,"devote":4,"devoted":4,"devotion":3,"diagnose":5,"diagnosis":5,"diagram":3,"dial":3,"dialog":3,"dialogue":1,"diameter":3,"diamond":3,"diaper":3,"diarrhea":4,"diarrhoea":4,"diary":2,"dictate":5,"dictator":5,"dictionary":1,"did":1,"die":1,"diet":1,"differ":4,"difference":1,"different":1,"differentiate":5,"differently":2,"difficult":1,"difficulty":3,"dig":4,"digest":4,"digital":2,"digital camera":2,"dignify":4,"dignity":5,"dilemma":5,"diligence":3,"diligent":3,"dim":4,"dime":4,"dimension":5,"dining room":1,"dinner":1,"dinosaur":2,"dioxide":3,"dip":5,"diphtheria":4,"diploma":4,"diplomat":5,"diplomatic":5,"direct":2,"direction":2,"directly":3,"director":2,"directory":5,"dirt":3,"dirty":1,"disability":4,"disable":3,"disabled":4,"disadvantage":3,"disagree":2,"disagreement":4,"disappear":2,"disappearance":4,"disappoint":4,"disappointed":3,"disappointing":3,"disappointment":4,"disapproval":4,"disapprove":4,"disaster":2,"disastrous":5,"disc":4,"disc jockey":3,"discard":5,"discharge":5,"disciple":4,"discipline":4,"disclose":5,"disclosure":5,"disco":2,"discomfort":3,"disconnect":4,"discount":3,"discourage":4,"discourse":5,"discover":2,"discovery":2,"discredit":4,"discretion":5,"discriminate":4,"discrimination":5,"discuss":1,"discussion":2,"disease":2,"disgrace":4,"disguise":4,"disgusting":3,"dish":1,"dishonest":4,"dishonesty":4,"dishwasher":3,"disillusion":4,"disk":3,"disk jockey":3,"dislike":2,"dislike v. ,":3,"dismiss":4,"dismissal":5,"disorder":4,"disorderly":4,"disorganised":4,"disorganized":4,"dispensable":4,"displace":5,"display":2,"display v. ,":4,"displeasure":4,"disposal":5,"dispose":5,"disposition":4,"dispute":5,"disqualify":4,"disregard":4,"disrupt":5,"disruption":5,"dissatisfaction":4,"dissatisfied":4,"dissident":4,"dissolve":5,"distance":2,"distant":4,"distinction":5,"distinctive":5,"distinctly":3,"distinguish":4,"distinguished":4,"distort":5,"distortion":4,"distract":4,"distraction":4,"distress":5,"distressing":4,"distribute":4,"distribution":4,"distributor":4,"district":4,"disturb":4,"disturbance":3,"disturbing":5,"dive":3,"dive v. ,":4,"diver":3,"diverse":4,"diversion":4,"diversity":4,"divert":5,"divide":3,"divided":4,"divine":5,"diving":3,"division":4,"divorce":4,"divorced":2,"dizzy":2,"dj":3,"dna":4,"do":1,"do1 v.,":1,"doc":3,"dock":4,"doctor":1,"doctrine":5,"document":2,"documentary":3,"documentation":5,"does":1,"dog":1,"doing":1,"doll":1,"dollar":1,"dolphin":3,"domain":5,"domestic":4,"dominance":5,"dominant":4,"dominate":4,"donate":3,"donation":4,"done":2,"donkey":4,"donor":5,"doom":4,"door":1,"doorkeeper":4,"doorway":4,"dorm":4,"dormitory":4,"dose":5,"dot":4,"double":3,"double adj. ,":2,"doubly":4,"doubt":3,"doubtful":4,"dove":4,"down":1,"down adv. ,":1,"downfall":4,"download":2,"download v. ,":2,"downsize":4,"downstairs":1,"downtown":4,"downward":3,"downwards":4,"dowry":4,"doze":3,"dozen":3,"dozen n. ,":4,"dr":1,"draft":4,"drag":4,"drain":5,"drama":2,"dramatic":4,"dramatically":4,"drapery":4,"draught":4,"draw":1,"drawer":2,"drawing":2,"dread":4,"dreadful":4,"dream":2,"dreamy":4,"dress":1,"dressed":3,"drift":5,"drill":2,"drink":1,"drinkable":4,"drive":1,"driver":1,"driver's license":2,"driving":2,"driving licence":2,"droop":4,"drop":2,"dropout":4,"drought":4,"drown":5,"drug":2,"drugstore":2,"drum":3,"drunk":3,"dry":1,"dry adj. ,":2,"dual":5,"dub":5,"duck":2,"dude":3,"due":1,"due adj.dust":3,"duel":4,"dull":4,"dumb":5,"dump":4,"duo":5,"duplicate":4,"duplication":4,"duration":4,"during":1,"dust":2,"dustbin":3,"dusty":3,"duty":3,"duty-free":3,"duvet":3,"dvd":1,"dwarf":4,"dye":4,"dynamic":4,"dynasty":3,"e-mail":1,"each":1,"each other":1,"eager":5,"eagerly":4,"eagerness":3,"eagle":4,"ear":1,"earache":3,"early":1,"earn":2,"earnest":3,"earnings":5,"earring":2,"earth":2,"earthquake":3,"ease":5,"easily":2,"easily adv.education":2,"east":1,"eastern":3,"eastward":4,"easy":1,"easy-going":3,"easygoing":3,"eat":1,"echo v. ,":5,"eco":3,"ecological":5,"ecologically":4,"ecologist":4,"ecology":3,"economic":3,"economical":4,"economics":4,"economist":4,"economy":3,"ecosystem":3,"ecstasy":3,"ecstatic":4,"edge":3,"edit":4,"edition":4,"editor":3,"editorial":4,"educate":3,"educated":3,"education":2,"educational":3,"educator":5,"effect":2,"effective":3,"effectively":3,"effectiveness":5,"efficiency":5,"efficient":4,"efficiently":4,"effort":3,"egg":1,"ego":5,"eight":1,"eighteen":1,"eighty":1,"either":2,"elaborate":5,"elbow":4,"elderly":4,"elect":4,"election":3,"elective":4,"electoral":5,"electric":2,"electrical":2,"electrician":4,"electricity":2,"electron":3,"electronic":2,"electronically":4,"electronics":4,"elegance":4,"elegant":4,"elegantly":4,"element":3,"elemental":4,"elementary":4,"elephant":1,"elevate":5,"elevator":2,"eleven":1,"eligible":5,"eliminate":4,"elite":5,"eloquence":4,"eloquent":4,"else":1,"elsewhere":4,"email":1,"embark":5,"embarrass":3,"embarrassed":3,"embarrassing":3,"embarrassment":5,"embassy":5,"embed":5,"embody":5,"embrace":4,"emerge":4,"emergence":5,"emergency":3,"emission":4,"emotion":3,"emotional":4,"emotionally":4,"emperor":3,"emphasis":4,"emphasize":4,"emphatically":4,"empire":4,"empirical":5,"employ":2,"employee":2,"employer":2,"employment":3,"empower":5,"empty":2,"enable":4,"enact":5,"enclose":3,"encompass":5,"encounter":3,"encounter v. ,":4,"encourage":3,"encouragement":5,"encouraging":5,"encyclopaedia":3,"encyclopedia":3,"end":1,"endanger":3,"endangered":2,"endeavor":4,"endeavour":5,"ending":2,"endless":3,"endlessly":4,"endorse":5,"endorsement":5,"endurance":4,"endure":5,"enduring":4,"enemy":3,"energetic":2,"energy":2,"enforce":5,"enforcement":5,"engage":4,"engaged":3,"engagement":5,"engaging":5,"engine":2,"engineer":2,"engineering":3,"englishman":3,"engulf":4,"enhance":4,"enjoy":1,"enjoyable":4,"enjoyment":3,"enormous":2,"enough":1,"enquire":5,"enquiry":4,"enrich":5,"enrol":5,"enroll":4,"ensue":5,"ensure":4,"enter":2,"enterprise":5,"entertain":3,"entertainer":3,"entertaining":4,"entertainment":3,"enthusiasm":4,"enthusiast":5,"enthusiastic":4,"enthusiastically":4,"entire":4,"entirely":4,"entitle":5,"entity":5,"entrance":3,"entrepreneur":4,"entry":3,"envelope":4,"environment":2,"environmental":3,"environmentalist":3,"environmentally":4,"environmentally friendly":4,"envy":2,"epidemic":5,"episode":3,"equal":4,"equal adj. ,":3,"equality":5,"equally":3,"equation":5,"equip":4,"equipment":2,"equity":4,"equivalent":4,"era":4,"erect":5,"error":2,"erupt":4,"eruption":4,"escalate":5,"escalator":2,"escape":2,"escape v. ,":3,"especially":2,"essay":2,"essayist":4,"essence":5,"essential":3,"essentially":4,"establish":4,"establishment":5,"estate":4,"estimate":3,"estimate v. ,":4,"estimated":4,"eternal":5,"eternally":4,"eternity":3,"ethic":4,"ethnic":4,"euro":1,"evacuate":5,"evacuation":4,"evaluate":4,"evaluation":4,"even":4,"evening":1,"evenly":3,"event":1,"eventually":3,"ever":1,"everlasting":4,"every":1,"everybody":1,"everyday":2,"everyone":1,"everything":1,"everywhere":2,"evidence":2,"evident":4,"evidently":4,"evil":4,"evil adj. ,":4,"evoke":5,"evolution":4,"evolutionary":5,"evolve":4,"exact":2,"exactly":2,"exactness":4,"exaggerate":5,"exaggeration":4,"exalt":4,"exam":1,"examination":4,"examine":3,"examinee":4,"examiner":3,"example":1,"exceed":4,"excel":4,"excellence":5,"excellent":2,"except":2,"exception":4,"exceptional":5,"exceptionally":4,"excess":5,"excessive":4,"exchange":3,"exchange rate":3,"excited":1,"excitedly":3,"excitement":3,"exciting":1,"exclaim":4,"exclamation mark":4,"exclude":4,"exclusion":5,"exclusive":5,"exclusively":5,"excursion":4,"excuse":4,"execute":5,"execution":5,"executive":4,"exercise":1,"exert":5,"exhaust":4,"exhausted":3,"exhausting":4,"exhaustion":4,"exhibit":4,"exhibit v. ,":4,"exhibition":3,"exile":5,"exist":2,"existence":4,"existing":4,"exit":4,"exotic":4,"expand":3,"expansion":4,"expect":2,"expectation":4,"expected":3,"expedition":3,"expenditure":5,"expense":4,"expensive":1,"experience":2,"experienced":3,"experiment":2,"experimental":5,"expert":2,"expertise":4,"expire":5,"explain":1,"explanation":2,"explicit":5,"explicitly":5,"explode":3,"exploit":4,"exploitation":5,"exploration":4,"explore":3,"explorer":4,"explosion":3,"explosive":4,"explosive adj. ,":5,"export":3,"expose":4,"exposure":4,"express":2,"expression":2,"expressive":4,"exquisite":4,"extend":4,"extension":4,"extensive":4,"extensively":4,"extent":4,"external":4,"extinct":3,"extinction":3,"extra":1,"extract":5,"extraordinarily":4,"extraordinary":4,"extreme":2,"extreme sports":3,"extremely":2,"extremist":5,"exultant":4,"eye":1,"eyebrow":4,"eyelash":4,"eyelid":4,"eyesight":3,"fabric":4,"fabulous":4,"face":1,"face to face":3,"face-to-face":3,"facilitate":5,"facilities":4,"facility":4,"fact":1,"faction":5,"factor":2,"factory":2,"faculty":5,"fade":5,"fail":2,"failed":4,"failure":4,"faint":3,"fair":2,"fairly":3,"fairness":5,"fairy":1,"faith":4,"faithful":3,"fake":4,"fall":1,"fallen":3,"false":1,"falter":4,"fame":4,"familiar":3,"familiarise":4,"familiarize":4,"family":1,"famous":1,"fan":2,"fancy":3,"fantastic":1,"fantastically":4,"fantasy":4,"far":1,"faraway":3,"fare":4,"farewell":3,"farm":1,"farmer":1,"farming":2,"farmland":3,"farther":3,"farthest":3,"fascinate":3,"fascinated":4,"fascinating":3,"fascination":4,"fashion":2,"fashionable":3,"fast":1,"fast food":2,"fasten":3,"fat":1,"fatal":5,"fate":5,"father":1,"father-in-law":4,"fault":4,"faulty":4,"favor":2,"favorable":3,"favorite":1,"favour":3,"favourable":5,"favourite":1,"favourite adj. ,":1,"fax":3,"fear":2,"fearsome":4,"feast":3,"feat":5,"feather":4,"feature":2,"february":1,"fed up":4,"federal":4,"fee":4,"feed":2,"feedback":4,"feel":1,"feeling":1,"fellow":4,"female":2,"female adj. ,":2,"feminist adj. ,":5,"fence":3,"ferry":3,"ferryboat":4,"festival":1,"festive":3,"fetch":3,"fever":4,"feverishly":3,"few":1,"fiber":4,"fibre":5,"fiction":2,"fictional":4,"field":2,"fierce":5,"fifteen":1,"fifth":1,"fifty":1,"fight":1,"fight v. ,":2,"fighter":2,"fighting":3,"figurative":4,"figure":2,"file":3,"filial":4,"fill":1,"filling":3,"film":1,"film-maker":5,"filter":5,"final":1,"finally":2,"finance":4,"financial":3,"financially":4,"find":1,"finding":4,"fine":1,"finely":4,"finger":2,"fingernail":4,"finish":1,"fire":1,"fire brigade":4,"fire station":3,"firearm":5,"firefighter":4,"fireplace":4,"firework":4,"firm":4,"firmly":4,"firmness":4,"first":1,"first floor":3,"first lady":3,"first language":4,"first name":2,"first person":4,"first-floor":3,"firstly":2,"fiscal":4,"fish":1,"fisherman":2,"fishing":2,"fit":2,"fitness":3,"five":1,"fix":2,"fixed":4,"fixture":5,"flag":3,"flame":4,"flap":4,"flash":4,"flat":1,"flavor":3,"flavour":4,"flaw":5,"flawed":5,"flawless":4,"flax":4,"flea":2,"flee":5,"fleet":5,"flesh":4,"flexibility":5,"flexible":4,"flexibly":4,"flight":1,"flip":4,"float":4,"flock":3,"flood":3,"floor":1,"flour":3,"flourish":5,"flow":3,"flow v. ,":3,"flower":1,"flu":2,"fluency":4,"fluent":3,"fluently":3,"fluid":5,"flunk":3,"flute":3,"flutter":4,"fly":1,"flying":2,"focus":1,"focus v. ,":2,"fog":2,"foggy":1,"fold":3,"folder":2,"folding":4,"folk":3,"follow":1,"follower":4,"following":2,"folly":4,"fond":4,"fondly":4,"fondness":3,"food":1,"fool":4,"foolish":3,"foolishly":4,"foot":1,"footage":5,"football":1,"footballer":2,"footnote":4,"for":1,"forbid":4,"forbidden":3,"force":3,"forcefully":4,"forecast":4,"forehead":3,"foreign":2,"foreigner":5,"foreman":4,"foresee":4,"forest":2,"forestry":4,"forever":3,"forge":5,"forget":1,"forgive":4,"fork":2,"form":1,"formal":2,"formally":3,"format":4,"formation":4,"former":4,"formerly":4,"formidable":4,"formula":5,"formulate":5,"forth":5,"forthcoming":5,"fortnight":3,"fortunate":4,"fortunately":2,"fortune":4,"forty":1,"forum":4,"forward":2,"fossil":4,"foster":5,"foul":4,"found":4,"foundation":4,"founder":4,"fountain":3,"four":1,"fourteen":1,"fourth":1,"fox":4,"fraction":4,"fragile":5,"fragment":4,"fragrance":4,"frame":3,"framework":4,"franchise":5,"frank":2,"frankly":5,"frantically":4,"fraud":4,"freak":4,"free":1,"freedom":4,"freely":4,"freeze":3,"freezer":3,"freezing":3,"frequency":4,"frequent":4,"frequently":3,"fresh":2,"freshman":3,"friday":1,"fridge":2,"fried":2,"friend":1,"friendliness":3,"friendly":1,"friendship":3,"frigate":4,"fright":3,"frighten":3,"frightened":3,"frightening":3,"frog":2,"from":1,"front":1,"frontier":4,"frost":3,"frozen":3,"frugal":4,"fruit":1,"frustrated":5,"frustrating":5,"frustration":5,"fry":3,"frying pan":3,"fuel":3,"fulfil":4,"fulfill":4,"full":1,"full stop":3,"full-time":4,"fully":4,"fume":4,"fun":1,"function":3,"functional":5,"functionality":4,"fund":4,"fundamental":4,"fundamentally":4,"funding":4,"fundraising":5,"funeral":5,"funk":4,"funky":4,"funny":1,"fur":3,"furious":4,"furiously":4,"furnish":3,"furniture":2,"furor":4,"furore":4,"further":2,"furthermore":4,"furthest":3,"fuss":3,"future":1,"gaiety":4,"gain":3,"gain v. ,":4,"gall":3,"gallery":2,"gallon":5,"gambling":5,"game":1,"gaming":4,"gang":4,"gangster":4,"gaol":3,"gap":2,"garage":3,"garbage":1,"garden":1,"gardener":4,"gardening":3,"garlic":2,"garment":3,"gas":2,"gasp":4,"gate":2,"gateway":4,"gather":3,"gathering":5,"gaudy":4,"gay":4,"gaze":5,"gear":5,"gee":3,"gender":4,"gene":4,"general":2,"generalisation":4,"generalise":4,"generalization":4,"generalize":4,"generally":3,"generate":4,"generation":3,"generic":5,"generosity":4,"generous":3,"generously":4,"genetic":4,"genetically":3,"genetics":3,"genius":4,"genocide":5,"genre":4,"gentle":3,"gentleman":3,"gently":4,"genuine":4,"genuinely":4,"geographic":4,"geographical":3,"geography":1,"geology":3,"germ":4,"gesture":4,"get":1,"getaway":4,"ghetto":4,"ghost":3,"giant":3,"giant adj. ,":3,"gift":2,"gifted":3,"gig":4,"giggle":3,"ginger":3,"giraffe":3,"girl":1,"girlfriend":1,"give":1,"giveaway":4,"given":2,"glacis":4,"glad":3,"glamorous":4,"glamourous":4,"glance":5,"glare":4,"glass":1,"glasses":1,"gleam":4,"glee":4,"glide":3,"glimpse":5,"glint":3,"global":3,"global warming":4,"globalization":4,"globally":4,"globe":4,"glocal":4,"gloomy":4,"glorify":4,"glorious":5,"glory":5,"glove":3,"glow":4,"go":1,"goal":2,"goalkeeper":3,"goat":4,"god":2,"goddess":3,"godly":4,"gold":2,"golden":4,"golf":2,"golfer":3,"good":1,"good afternoon":1,"good morning":1,"good night":1,"good-looking":2,"goodbye":1,"goodness":4,"goods":3,"goodwill":4,"gook":4,"gorge":4,"gorgeous":4,"gorilla":3,"gossip":3,"govern":4,"governance":5,"government":2,"governmental":4,"governor":4,"gown":3,"grab":4,"grace":5,"graceful":3,"gracefulness":4,"grade":3,"gradual":4,"gradually":4,"graduate":3,"graduation":3,"grain":3,"gram":2,"grammar":1,"gramme":2,"grand":4,"grandchild":2,"granddad":2,"granddaughter":2,"grandfather":1,"grandma":1,"grandmother":1,"grandpa":1,"grandparent":1,"grandson":2,"granny":2,"grant":3,"grant v. ,":4,"grape":1,"graph":3,"graphic":4,"graphically":4,"graphics":4,"grasp":4,"grasp v. ,":5,"grass":2,"grateful":3,"gratitude":3,"grave":3,"grave (for dead person)":5,"grave (serious)":5,"gravestone":4,"gravitation":4,"gravity":5,"gravy":3,"gray":1,"great":1,"greatly":4,"greatness":4,"greedy":2,"green":1,"green adj. ,":1,"greenhouse":4,"greet":2,"greeting":3,"grey":1,"grey adj. ,":1,"grid":5,"grief":5,"grieve":4,"grill":3,"grilled":2,"grim":4,"grin":4,"grin v. ,":5,"grind":5,"grip":5,"grocery":4,"grocery store":2,"groom":3,"gross":5,"ground":2,"ground floor":3,"group":1,"grouping":3,"grow":1,"growing":4,"grown-up":4,"growth":3,"guarantee":3,"guarantee v. ,":4,"guard":3,"guerrilla":5,"guess":1,"guess v. ,":1,"guest":2,"guidance":5,"guide":2,"guidebook":2,"guideline":4,"guilt":5,"guilty":3,"guitar":1,"guitarist":3,"gulp":4,"gum":4,"gun":2,"gunshot":4,"gut":5,"guts":4,"guy":2,"gym":1,"gymnastic":4,"gymnastics":3,"habit":2,"habitant":4,"habitat":4,"had":1,"hail":5,"hair":1,"haircut":1,"hairdresser":3,"hairdryer":3,"hairy":4,"half":2,"half n. ,":1,"half-price":2,"halfway":5,"hall":2,"halt v. ,":5,"ham":2,"hamburger":1,"hammer":3,"hand":1,"hand-held":3,"handbag":2,"handball":3,"handful":5,"handicap":4,"handicapped":2,"handicraft":4,"handkerchief":3,"handle":2,"handle v. ,":4,"handling":5,"handout":4,"handrail":4,"handshake":3,"handsome":1,"handwriting":3,"handy":5,"hang":3,"hanging":3,"happen":1,"happily":2,"happiness":3,"happy":1,"harassment":5,"harbor":3,"harbour":4,"hard":1,"hard drive":4,"hard-working":3,"hardly":3,"hardship":3,"hardware":5,"harm":4,"harmful":2,"harmful adj.hearing":4,"harmless":4,"harmony":5,"harness":3,"harrow":4,"harsh":5,"harvest":5,"has":1,"haste":4,"hastily":4,"hasty":3,"hat":1,"hatch":3,"hatching":4,"hate":1,"hatred":5,"haunt":5,"haunting":4,"have":1,"have to":1,"haven":3,"hay":4,"hazard":5,"hazardous":4,"he":1,"head":1,"headache":2,"headline":3,"headphone":2,"headquarters":4,"headteacher":2,"heal":4,"healing":3,"health":1,"health care":4,"healthcare":4,"healthy":1,"heap":4,"hear":1,"hearing":3,"heart":2,"heart attack":3,"heart-warming":4,"heartbreaking":4,"hearted":3,"heartwarming":4,"hearty":3,"heat":2,"heater":3,"heating":3,"heaven":4,"heavenly":3,"heavily":3,"heavy":2,"hedge":4,"heel":4,"height":2,"heighten":5,"helicopter":3,"hell":4,"hello":1,"helmet":4,"help":1,"help v. ,":1,"helper":4,"helpful":2,"helpless":3,"hemp":4,"hence":4,"her":1,"her pron. ,":1,"herb":4,"herd":3,"here":1,"heritage":5,"hero":2,"hers":2,"herself":2,"hesitate":4,"hesitation":4,"hey":1,"hi":1,"hi-tech":4,"hidden":4,"hide":2,"hierarchy":5,"high":1,"high school":2,"high-profile":5,"high-tech":4,"highlight":3,"highlight v. ,":3,"highly":3,"highway":4,"hijack":4,"hike":2,"hiking":2,"hilarious":4,"hilarious adj.hip":4,"hill":2,"him":1,"himself":2,"hint":5,"hip":3,"hip hop":2,"hip-hop":2,"hiphop":2,"hire":3,"his":1,"historian":4,"historic":3,"historical":3,"history":1,"hit":2,"hit v. ,":2,"hiv":3,"hobby":1,"hockey":2,"hold":2,"holder":4,"hole":2,"holiday":1,"hollow":4,"holocaust":4,"holy":4,"home":1,"homeland":5,"homeless":4,"hometown":1,"homeward":4,"homework":1,"hone":4,"honest":3,"honestly":3,"honesty":4,"honey":2,"honeymoon":3,"honor":2,"honorable":4,"honour":4,"honourable":4,"hood":4,"hook":4,"hop":3,"hope":1,"hopeful":3,"hopeful adj.horizon":5,"hopefully":4,"hopeless":3,"horizon":3,"horn":5,"horrible":3,"horrify":3,"horror":3,"horse":1,"hospice":4,"hospitable":4,"hospital":1,"hospitalise":4,"hospitality":4,"hospitalize":4,"host":3,"hostage":5,"hostel":3,"hostile":5,"hostility":5,"hot":1,"hotel":1,"hour":1,"hourly":4,"house":1,"household":4,"housekeeper":4,"housemaster":4,"housewife":4,"housework":3,"housing":4,"hover":4,"how":1,"however":1,"hug":2,"huge":2,"hugely":4,"human":2,"human adj. ,":2,"human rights":4,"humane":4,"humanise":4,"humanist":4,"humanitarian":5,"humanity":5,"humanize":4,"humble":5,"humbug":4,"humid":3,"humiliate":4,"humiliating":4,"humiliation":4,"humor":3,"humorous":4,"humour":4,"hundred":1,"hunger":4,"hungry":1,"hunt":3,"hunter":2,"hunting":4,"hurricane":3,"hurriedly":3,"hurry":3,"hurt":2,"husband":1,"hush":4,"hut":3,"hybrid":4,"hydrogen":5,"hygiene":4,"hyperbole":4,"hyphen":4,"hypothesis":4,"i":1,"ice":1,"ice cream":1,"ice hockey":3,"ice skating":3,"iceman":4,"icon":4,"icy":4,"id":4,"id card":2,"idea":1,"ideal":2,"ideally":4,"identical":4,"identification":5,"identify":2,"identity":3,"identity card":3,"ideological":5,"ideology":5,"idiom":3,"idiot":5,"idle":4,"idol":3,"idolise":4,"idolize":4,"if":1,"ignorance":5,"ignorant":4,"ignore":3,"ill":2,"illegal":3,"illegally":3,"illness":2,"illuminate":3,"illusion":4,"illustrate":4,"illustration":4,"image":2,"imagery":5,"imaginary":3,"imagination":4,"imagine":1,"imitate":3,"imitation":4,"immediate":3,"immediately":3,"immense":5,"immerse":4,"immigrant":3,"immigrate":3,"immigration":4,"imminent":5,"immoral":4,"immortal":4,"immortality":4,"immune":4,"impact":3,"impair":3,"impartial":4,"impatient":4,"impatiently":4,"imperative":4,"impermanent":4,"implement":4,"implementation":5,"implication":4,"imply":4,"impolite":4,"impolitely":4,"import":3,"importance":3,"important":1,"importantly":2,"impose":4,"impossibility":4,"impossible":2,"impractical":4,"impress":4,"impressed":4,"impression":3,"impressionism":4,"impressionist":4,"impressive":3,"imprison":5,"imprisonment":5,"improbable":4,"improper":3,"improperly":4,"improve":1,"improved":4,"improvement":3,"impulse":4,"impulsive":4,"in":1,"inability":5,"inaccurate":4,"inadequate":5,"inanimate":4,"inappropriate":5,"inborn":4,"incense":4,"incentive":4,"inch":4,"incidence":5,"incident":4,"inclined":5,"include":1,"included":2,"including":2,"inclusion":5,"income":4,"inconvenient":3,"incorporate":4,"incorrect":4,"increase":2,"increase v. ,":2,"increasingly":4,"incredible":2,"incredibly":3,"incur":5,"incurable":4,"indebted":4,"indeed":3,"indefinite article":3,"indent":4,"independence":4,"independent":2,"independently":4,"indescribable":4,"index":4,"indicate":3,"indication":4,"indicator":5,"indictment":5,"indifferent":4,"indigenous":5,"indignity":4,"indirect":3,"indirectly":3,"indispensable":4,"individual":2,"indoor":3,"indoors":3,"induce":5,"indulge":5,"indulgent":4,"industrial":4,"industrialise":4,"industrialize":4,"industry":2,"ineffective":4,"inequality":5,"inert":4,"inevitable":4,"inevitably":4,"inexpensive":2,"inexperienced":4,"infamous":5,"infant":5,"infect":5,"infected":4,"infection":4,"infectious":4,"infer":4,"inference":4,"infinitive":3,"inflammation":4,"inflammatory":4,"inflate":4,"inflation":4,"inflict":5,"influence":3,"influential":5,"influenza":4,"info":4,"inform":4,"informal":2,"information":1,"informative":3,"infrastructure":4,"infringe":4,"infringement":4,"ingredient":3,"inhabit":4,"inhabitant":4,"inhale":3,"inherent":5,"inherit":4,"inhibit":5,"initial":4,"initially":4,"initiate":5,"initiative":4,"inject":5,"injection":5,"injure":3,"injured":3,"injury":2,"injustice":5,"ink":4,"inmate":5,"innate":4,"inner":4,"innermost":3,"innocent":3,"innocently":4,"innovation":4,"innovative":4,"innovator":3,"input":4,"inquire":4,"inquiry":3,"insane":3,"inscribe":3,"inscription":3,"insect":2,"inseparable":4,"insert":4,"insertion":5,"inside":2,"insider":5,"insight":4,"insist":4,"inspect":5,"inspection":5,"inspector":4,"inspiration":5,"inspirational":4,"inspire":4,"instal":3,"install":4,"installation":4,"instance":4,"instant":4,"instantly":4,"instead":2,"instead of":3,"instil":4,"instill":4,"instinct":5,"institute":4,"institution":4,"institutional":5,"instruct":5,"instruction":2,"instructor":2,"instrument":2,"instrumental":5,"insufficient":5,"insult":5,"insurance":4,"intact":5,"intake":5,"integral":5,"integrate":4,"integrated":5,"integration":5,"integrity":5,"intellectual":4,"intelligence":3,"intelligent":2,"intend":3,"intended":4,"intense":4,"intensify":5,"intensity":5,"intensive":5,"intent":5,"intention":3,"intentionally":3,"interact":4,"interaction":4,"interactive":5,"interest":1,"interested":1,"interesting":1,"interface":5,"interfere":5,"interim":5,"interior":4,"interior adj. ,":5,"intermediate":5,"intermission":3,"internal":4,"international":2,"internationally":3,"internet":1,"interpersonal":4,"interpret":4,"interpretation":4,"interpreter":4,"interrupt":4,"interruption":4,"intersection":4,"interval":4,"intervene":5,"intervention":5,"interview":1,"interviewee":3,"interviewer":1,"intimate":5,"into":1,"intransitive":4,"intravenous":4,"intriguing":5,"introduce":1,"introduction":2,"intrude":4,"intruder":4,"intrusion":4,"invade":4,"invariable":4,"invariably":4,"invasion":4,"invent":2,"invention":2,"inventor":4,"inverted commas":4,"invest":3,"investigate":3,"investigation":4,"investigator":5,"investment":4,"investor":4,"invisible":5,"invitation":2,"invite":2,"invitingly":4,"invoke":5,"involuntarily":3,"involve":2,"involved":3,"involvement":5,"iron":3,"ironic":5,"ironically":5,"ironing":3,"irony":5,"irrational":4,"irregular":3,"irrelevant":5,"irresistible":4,"irresistibly":4,"irresponsible":4,"irritate":3,"irritated":4,"irritating":4,"irritation":4,"is":1,"island":1,"islander":4,"isle":3,"isolate":4,"isolated":4,"isolation":5,"issue":3,"it":1,"italicise":4,"italicize":4,"itch":4,"item":2,"its":1,"itself":2,"ivory":3,"jacket":1,"jade":3,"jail":4,"jam":2,"january":1,"jar":3,"jaw":4,"jazz":2,"jealous":3,"jealously":4,"jeans":1,"jelly":2,"jeopardise":4,"jeopardize":4,"jet":4,"jewel":3,"jeweler":4,"jeweller":4,"jewellery":2,"jewelry":1,"job":1,"jog":3,"jogging":3,"join":1,"joint":3,"joint adj. ,":4,"joke":2,"journal":3,"journalism":4,"journalist":2,"journey":1,"joy":4,"judge":3,"judgement":4,"judgment":3,"judicial":5,"judo":4,"jug":3,"juice":1,"juicy":3,"july":1,"jump":1,"jump v. ,":2,"jumper":3,"junction":5,"june":1,"jungle":3,"junior":4,"junk":2,"junk food":4,"jurisdiction":5,"juror":4,"jury":4,"just":1,"justice":4,"justification":5,"justify":4,"kangaroo":4,"karaoke":4,"keen":3,"keep":1,"keeper":4,"kerosene":4,"kettle":3,"key":1,"keyboard":3,"keystroke":4,"kick":1,"kick v. ,":3,"kid":2,"kidnap":5,"kidney":5,"kill":2,"killer":2,"killing":3,"kilo":2,"kilogram":2,"kilogramme":2,"kilometer":2,"kilometre":1,"kind":1,"kind (caring)":3,"kind (type)":1,"kindly":2,"kindness":3,"king":2,"kingdom":5,"kiss":1,"kiss v. ,":3,"kit":4,"kitchen":1,"kite":1,"kitten":3,"knee":2,"kneel":4,"knife":2,"knit":3,"knock":2,"knot":4,"know":1,"knowingly":4,"knowledge":2,"known":4,"lab":2,"label":3,"labor":2,"laboratory":3,"laborer":4,"labour":4,"labourer":4,"lack":3,"lad":5,"ladder":4,"lady":2,"lake":2,"lamb":3,"lame":4,"lamp":2,"lance":4,"land":1,"landing":4,"landlady":4,"landlord":5,"landmark":5,"landscape":4,"landslide":4,"lane":4,"language":1,"lap":5,"laptop":2,"large":1,"large-scale":5,"largely":4,"lark":4,"laser":5,"last":2,"last minute":4,"last name":1,"last-minute":4,"last1 (final)":1,"last1 (final) adv. ,":2,"last1 (taking time)":2,"lasting":3,"lastly":4,"late":1,"latecomer":3,"lately":4,"later":1,"latest":3,"latter":2,"latter adj. ,":5,"laugh":1,"laugh v. ,":1,"laughter":2,"launch":3,"launch v. ,":4,"laundry":4,"lava":4,"law":2,"lawful":3,"lawmaker":4,"lawn":5,"lawsuit":5,"lawyer":2,"lay":3,"layabout":4,"layer":3,"layout":5,"laziness":2,"lazy":2,"lead 1":2,"leader":2,"leadership":4,"leading":3,"leaf":3,"leaflet":4,"league":4,"leak":4,"leak v. ,":5,"lean":4,"leap":3,"leap v. ,":5,"learn":1,"learner":2,"learning":2,"lease":4,"leash":4,"least":2,"leather":3,"leave":1,"lecture":2,"lecturer":4,"leek":4,"left":1,"left adj. , adv. ,":1,"left-hand":2,"leg":1,"legacy":5,"legal":3,"legally":3,"legend":4,"legendary":5,"legislate":4,"legislation":5,"legislative":5,"legislator":4,"legislature":5,"legitimate":5,"leisure":3,"leisurely":4,"lemon":2,"lemonade":2,"lend":2,"length":3,"lengthen":4,"lengthy":5,"lens":4,"leopard":4,"lesbian":5,"less":2,"lessen":3,"lesser":5,"lesson":1,"lest":4,"let":1,"lethal":5,"letter":1,"lettuce":3,"level":2,"liable":5,"liar":3,"liberal":4,"liberal adj. ,":5,"liberate":3,"liberation":5,"liberty":5,"librarian":3,"library":1,"licence":4,"license":5,"lick":4,"lid":4,"lie":2,"lie1":1,"lie2 (tell a lie) v. ,":3,"life":1,"lifeguard":3,"lifeless":4,"lifelong":5,"lifestyle":2,"lifetime":4,"lift":3,"lift v. ,":2,"light":1,"light (from the sun/a lamp)":1,"light (not heavy)":2,"lighten":4,"lighter":3,"lighting":4,"lightly":3,"lightning":3,"like":1,"like (find sb/sth pleasant)":1,"like (similar)":1,"likelihood":5,"likely":2,"likeness":3,"likewise":4,"lily":1,"limb":5,"limit":3,"limitation":4,"limited":4,"limp":3,"line":1,"line-up":5,"linear":5,"linen":4,"liner":4,"ling":4,"linger":5,"link":2,"lion":1,"lip":3,"liquid":3,"list":1,"listen":1,"listener":2,"listing":5,"liter":2,"literacy":5,"literal":4,"literally":4,"literary":4,"literature":3,"litre":4,"litter":4,"little":2,"little adj. ,":1,"live":1,"live1":1,"live2":3,"lively":4,"liver":5,"living":1,"living adj. ,":3,"living room":1,"load":4,"loaf":3,"loan":4,"lobby":5,"local":1,"locate":3,"located":3,"location":3,"lock":2,"lodge":3,"log":5,"logic":5,"logical":4,"logo":4,"loneliness":4,"lonely":3,"long 1":1,"long-distance":4,"long-standing":5,"long-term":4,"long-time":5,"look":1,"loom":5,"loop":5,"loose":4,"loosely":4,"lord":4,"lorry":2,"lose":1,"loss":3,"lost":2,"lot":1,"lot pron. ,":1,"lottery":4,"loud":2,"loudly":2,"loudspeaker":3,"lousy":4,"love":1,"lovely":2,"lover":2,"lovingly":3,"low":2,"lower":4,"lowland":4,"loyal":4,"loyalty":5,"luck":2,"luckily":2,"lucky":2,"lucrative":4,"luggage":3,"lunch":1,"lunchtime":2,"lung":4,"lush":4,"luxurious":4,"luxury":3,"lyric":4,"lyrics":4,"machine":1,"machinery":5,"mad":3,"madam":4,"madame":4,"madness":4,"maestro":4,"magazine":1,"magic":3,"magical":3,"magician":3,"magistrate":5,"magnetic":5,"magnificent":4,"magnify":4,"magnitude":5,"mail":2,"mailbox":3,"main":1,"main course":2,"mainland":5,"mainly":3,"mainstream":5,"maintain":4,"maintenance":5,"major":2,"majority":4,"make":1,"make-up":4,"maker":2,"making":4,"malady":4,"malaria":4,"male":2,"male adj. ,":2,"mall":2,"mama":4,"mamma":4,"man":1,"manage":2,"management":3,"manager":2,"mandate":5,"mandatory":5,"mango":4,"manifest":5,"manipulate":5,"manipulation":5,"mankind":3,"manner":2,"mansion":4,"manual":4,"manufacture":4,"manufacturer":4,"manufacturing":4,"manuscript":5,"many":1,"map":1,"maple":3,"marathon":4,"marble":3,"march":1,"margin":4,"marginal":5,"marine":5,"mark":2,"mark v. ,":2,"marked":3,"marker":4,"market":1,"marketing":3,"marketplace":5,"marriage":3,"married":1,"marry":2,"martial":4,"martial art":4,"marvellous":2,"marvelous":2,"mash":3,"mask":5,"mass":4,"massacre":5,"massage":4,"masseur":4,"massive":4,"master":4,"masterpiece":4,"mastery":4,"match":1,"match (contest/correspond)":1,"matching":4,"mate":4,"material":2,"math":1,"mathematical":5,"mathematician":3,"mathematics":2,"maths":2,"matter":2,"mature":4,"mature adj. ,":5,"mausoleum":4,"max":2,"maximize":5,"maximum":3,"maximum adj. ,":4,"may":1,"maybe":1,"mayor":4,"me":1,"meal":1,"mean":1,"meaning":1,"meaningful":5,"means":4,"meantime":5,"meanwhile":3,"measure":3,"measure v. ,":3,"measurement":4,"meat":1,"mechanic":4,"mechanical":4,"mechanise":4,"mechanism":4,"mechanize":4,"medal":4,"media":2,"mediaeval":4,"medical":2,"medication":4,"medicine":2,"medieval":5,"mediocre":4,"meditate":3,"meditation":5,"mediterranean":3,"medium":3,"meet":1,"meeting":1,"melody":5,"melon":2,"melt":4,"member":1,"membership":4,"memo":5,"memoir":5,"memorable":4,"memorial":5,"memorise":3,"memorize":3,"memory":2,"mend":3,"mental":3,"mentally":3,"mention":2,"mentor":5,"menu":1,"merchandise":4,"merchant":5,"mercy":5,"mere":5,"merely":5,"merge":5,"merger":5,"merit":5,"merry":1,"mess":3,"message":1,"message board":3,"messenger":4,"messy":3,"metal":2,"metaphor":4,"meter":2,"method":2,"methodology":5,"metre":1,"metric":4,"micro":4,"microbe":4,"microcomputer":4,"micrometer":4,"micrometre":4,"microorganism":4,"microphone":4,"microscope":4,"microscopic":4,"microscopy":4,"microwave":4,"midday":2,"middle":2,"middle-aged":3,"midnight":1,"midst":5,"might":2,"mighty":4,"migration":5,"mild":3,"mile":1,"militant":5,"military":2,"military adj. ,":4,"militia":5,"milk":1,"mill":5,"millimeter":4,"millimetre":4,"million":1,"millionaire":4,"mimic":4,"mind":2,"mine":1,"mine (belongs to me)":2,"mine (hole in the ground)":3,"miner":4,"mineral":4,"mineral water":2,"miniature":4,"minimal":5,"minimise":3,"minimize":5,"minimum":3,"minimum adj. ,":4,"mining":5,"minister":4,"ministry":5,"minor":4,"minority":4,"mint":4,"minus":3,"minute 1":1,"miracle":5,"mirror":2,"mischief":3,"misconception":4,"miserable":4,"misery":5,"misfortune":4,"mislead":3,"misleading":5,"miss":1,"missile":5,"missing":2,"mission":4,"mist":4,"mistake":1,"mistreat":4,"mistrustful":4,"misty":3,"misunderstand":4,"misunderstanding":3,"mix":2,"mix v. ,":3,"mixed":4,"mixing bowl":3,"mixture":3,"mob":5,"mobile":1,"mobile adj. ,":2,"mobile phone":1,"mobility":5,"mobilize":5,"mock":4,"modal":3,"modal verb":3,"mode":4,"model":1,"modem":3,"moderate":5,"modern":1,"modernisation":4,"modernise":4,"modernization":4,"modernize":4,"modest":4,"modification":5,"modify":4,"mogul":4,"moisture":3,"mold":4,"molecule":3,"mom":1,"moment":1,"momentarily":4,"momentary":4,"momentum":5,"mommie":1,"mommy":1,"monastery":4,"monday":1,"money":1,"monitor":4,"monk":5,"monkey":2,"monopoly":5,"monster":4,"month":1,"monthly":4,"monument":4,"mood":3,"moody":4,"moon":2,"moonlight":4,"moonscape":4,"moral":3,"moral adj. ,":4,"morality":5,"morally":4,"more":1,"moreover":4,"morning":1,"mortal":4,"mortar":4,"mortgage":4,"mortify":4,"mosque":4,"mosquito":3,"moss":3,"most":1,"mostly":2,"mother":1,"mother-in-law":4,"motherland":3,"motion":4,"motionless":3,"motivate":4,"motivated":4,"motivation":4,"motive":5,"motor":4,"motorbike":4,"motorcycle":2,"motorist":5,"motorway":2,"motto":3,"mould":4,"mount":4,"mountain":1,"mountaintop":3,"mourn":3,"mournful":4,"mouse":1,"moustache":4,"mouth":1,"move":1,"movement":2,"mover":4,"movie":1,"moving":4,"mp3 player":2,"mr":1,"mrs":1,"ms":2,"much":1,"mud":3,"muddy":4,"mug":2,"mule":3,"multiple":4,"multiply":4,"mum":1,"mumble":4,"municipal":5,"murder":3,"murderer":3,"murmur":4,"muscle":3,"muse":4,"museum":1,"mushroom":2,"music":1,"musical":2,"musician":2,"must":1,"mustache":4,"mustard":3,"mutability":4,"mutable":4,"mutter":4,"mutton":4,"mutual":5,"my":1,"myself":2,"mysterious":4,"mystery":3,"mystify":4,"myth":4,"nail":3,"naked":4,"name":1,"namely":5,"nano":4,"nap":3,"napkin":2,"narcissistic":4,"narrate":3,"narrative":3,"narrator":4,"narrow":2,"narrowly":4,"nasty":4,"nation":3,"national":2,"nationalist":3,"nationality":1,"nationwide":5,"native":2,"native adj. ,":3,"native speaker":4,"natural":1,"naturally":3,"nature":2,"naughty":4,"naval":5,"navigate":4,"navigation":4,"navy":4,"navy blue":3,"near":1,"nearby":4,"nearly":2,"neat":4,"necessarily":3,"necessary":2,"necessity":4,"neck":2,"necklace":3,"nectar":3,"need":1,"needle":3,"needless":4,"needy":4,"negative":1,"negatively":4,"neglect":4,"neglect v. ,":5,"negotiate":4,"negotiation":4,"neighbor":1,"neighborhood":3,"neighboring":4,"neighbour":1,"neighbourhood":3,"neighbouring":4,"neither":2,"nephew":3,"nerve":4,"nerves":4,"nervous":2,"nervously":4,"nervousness":3,"ness":3,"nest":5,"net":3,"net surfer":4,"netsurfer":4,"network":2,"neurosis":4,"neutral":4,"never":1,"nevertheless":4,"new":1,"newborn":3,"newcomer":3,"newly":4,"news":1,"newscaster":4,"newsletter":5,"newspaper":1,"newsworthy":4,"next":1,"next door":3,"next to":1,"next-door":3,"nice":1,"nicely":4,"niche":5,"nickname":3,"niece":3,"night":1,"nightclub":4,"nightlife":3,"nightmare":4,"nine":1,"nineteen":1,"ninety":1,"no":1,"no exclam. ,":1,"no one":2,"nobility":4,"noble":5,"nobleman":4,"nobody":1,"nod":5,"noise":2,"noisily":3,"noisy":2,"nomad":4,"nominate":5,"nomination":5,"nominee":5,"non-profit":5,"non-smoking":4,"none":2,"nonetheless":5,"nonprofessional":4,"nonsense":5,"noon":5,"nor":3,"norm":4,"normal":2,"normally":2,"north":1,"northeast":3,"northeastern":3,"northern":3,"northward":4,"northwest":3,"northwestern":3,"nose":1,"nostril":4,"not":1,"notable":5,"notably":5,"note":1,"notebook":4,"nothing":1,"notice":2,"notice v. ,":2,"noticeable":3,"noticeboard":3,"notify":5,"notion":4,"notorious":5,"nought":4,"noun":2,"nourish":4,"nourishment":4,"novel":2,"novelist":4,"novelty":4,"november":1,"now":1,"nowadays":4,"nowhere":2,"nuclear":3,"nucleus":3,"nuisance":4,"number":1,"numerical":4,"numerous":4,"nurse":1,"nursery":5,"nursing":4,"nut":2,"nutrient":3,"nutrition":4,"nutritious":3,"nutshell":4,"o'clock":1,"oak":2,"oath":4,"obedience":4,"obedient":4,"obesity":4,"obey":4,"obituary":4,"object":1,"objection":5,"objective":4,"obligation":4,"oblige":5,"observation":4,"observe":4,"observer":4,"obsess":5,"obsession":5,"obsessive":4,"obstacle":4,"obtain":4,"obvious":3,"obviously":3,"occasion":3,"occasional":5,"occasionally":4,"occupation":4,"occupy":4,"occur":3,"occurrence":5,"ocean":2,"october":1,"odd":3,"odds":5,"of":1,"off":1,"off adv. ,":1,"offence":4,"offend":4,"offender":4,"offense":4,"offensive":4,"offer":2,"offer v. ,":2,"offering":5,"offhand":4,"office":1,"officer":2,"official":3,"officially":3,"offshore":4,"offspring":5,"often":1,"oh":1,"oil":2,"oily":3,"ointment":4,"ok":1,"okay":1,"old":1,"old-fashioned":3,"olive":4,"olive oil":2,"olympia":4,"olympiad":4,"olympic":2,"olympics":1,"omelet":2,"omelette":2,"on":1,"on to":3,"once":1,"one":1,"one number/det. ,":1,"oneself":3,"ongoing":4,"onion":1,"online":1,"only":1,"onstage":3,"onto":2,"open":1,"open adj. ,":1,"opening":4,"openly":4,"opera":4,"operate":4,"operation":3,"operational":5,"operator":4,"opinion":1,"opponent":4,"opportunity":2,"oppose":2,"opposed":4,"opposite":2,"opposite adj. , n.,":1,"opposition":4,"oppress":3,"oppression":3,"opt":5,"optical":5,"optimism":5,"optimist":4,"optimistic":4,"option":2,"optional":4,"or":1,"oral":5,"orange":1,"orator":4,"orbit":3,"orchestra":4,"orchestral":4,"orchid":4,"order":1,"orderly":3,"ordinary":2,"organ":4,"organic":4,"organisation":3,"organise":2,"organised":2,"organiser":4,"organism":3,"organization":2,"organizational":5,"organize":2,"organized":3,"organizer":3,"orientation":5,"origin":4,"original":2,"originality":4,"originally":3,"originate":5,"ornament":4,"orphan":2,"other":1,"otherwise":4,"ought":3,"ought to":3,"ounce":4,"our":1,"ours":3,"ourselves":2,"out":1,"out of":2,"out-of-date":3,"outback":4,"outbreak":5,"outcome":4,"outdistance":4,"outdo":4,"outdoor":3,"outdoors":3,"outer":4,"outfit":4,"outgrow":4,"outing":5,"outlaw":3,"outlet":5,"outline":4,"outlive":4,"outlook":5,"outpatient":4,"output":4,"outrage":5,"outrageous":4,"outshine":4,"outside":1,"outsider":5,"outskirts":4,"outstanding":3,"outstanding adj.overcome":4,"outward":3,"outwardly":4,"outweigh":3,"oval":4,"oven":2,"over":1,"overall":4,"overboard":4,"overbook":4,"overcoat":4,"overcome":3,"overemphasise":4,"overemphasize":4,"overestimate":4,"overhear":4,"overjoyed":3,"overlap":4,"overlook":5,"overly":5,"overnight":4,"overseas":2,"overseas adv. ,":4,"oversee":5,"overshadow":4,"oversize":4,"overstep":4,"overtake":4,"overthrow":4,"overtime":4,"overturn":5,"overweight":2,"overwhelm":5,"overwhelming":5,"overwork":3,"ow":4,"owe":4,"owing":3,"owing to":4,"owl":4,"own":1,"owner":2,"ownership":4,"ox":4,"oxygen":4,"ozone":4,"o’clock":1,"p.m.":1,"pa":4,"pace":4,"pacific":2,"pack":2,"package":3,"packed":4,"packet":4,"packing":3,"pad":5,"paddle":3,"page":1,"paid":3,"pain":2,"painful":3,"paint":1,"paint v. ,":1,"paintbrush":4,"painter":2,"painting":1,"pair":1,"pajamas":4,"pal":2,"palace":2,"pale":3,"pallet":4,"palm":4,"pan":3,"pancake":4,"pandemic":4,"panel":4,"panic":4,"pants":2,"papaya":4,"paper":1,"paperless":4,"paperwork":4,"parachute":3,"parade":4,"paradise":3,"paradox":4,"paragraph":1,"parallel adj. ,":4,"paralyse":3,"paralysis":4,"paralyze":3,"paramedic":4,"parameter":5,"paratrooper":4,"parcel":3,"pardon":1,"parent":1,"parental":5,"parish":5,"park":1,"parking":2,"parliament":4,"parliamentary":5,"parrot":3,"part":1,"part-time":4,"partial":5,"partially":5,"participant":4,"participate":3,"participation":4,"participle":3,"particle":4,"particular":2,"particularly":3,"partisan":4,"partly":4,"partner":1,"partnership":4,"party":1,"pass":2,"passage":4,"passenger":2,"passing":5,"passion":3,"passionate":4,"passionately":4,"passive":5,"passport":1,"password":4,"past":2,"past adj. , n.,":1,"pasta":2,"pastor":5,"pastoral":4,"patch":5,"patent":5,"path":3,"pathway":5,"patience":4,"patient":2,"patiently":4,"patriot":4,"patriotic":4,"patriotism":4,"patrol":5,"patron":5,"pattern":2,"pause":3,"pause v. ,":4,"pave":4,"pavement":4,"paw":4,"pawnbroker":4,"pawnshop":4,"pay":1,"payment":3,"pc":2,"pea":2,"peace":2,"peaceful":3,"peacefully":4,"peach":4,"peak":5,"peanut":3,"pear":2,"pearl":4,"peasant":5,"pebble":4,"peculiar":5,"pedal":4,"pedantic":4,"pedestrian":4,"pee":4,"peel":4,"peep":4,"peer":4,"peg":4,"pen":1,"pen friend":2,"penalise":4,"penalize":4,"penalty":4,"pence":2,"pencil":1,"penetrate":4,"penfriend":2,"penguin":4,"penicillin":4,"penniless":3,"penny":2,"pension 1":4,"pentagon":4,"people":1,"pepper":1,"per":2,"per cent":2,"perceive":4,"percent":3,"percentage":3,"perception":4,"perfect":1,"perfectly":2,"perform":2,"performance":3,"performer":3,"perfume":2,"perhaps":2,"period":1,"permanence":4,"permanent":4,"permanently":4,"permeate":4,"permission":2,"permit":3,"permit v. ,":4,"perseverance":4,"persist":5,"persistence":4,"persistent":5,"person":1,"personal":1,"personality":2,"personally":3,"personification":4,"personify":4,"personnel":5,"perspective":4,"perspiration":4,"persuade":3,"persuasion":4,"persuasive":3,"pessimist":4,"pessimistic":4,"pet":2,"petrified":4,"petrol":2,"petrol station":2,"petty":4,"ph":4,"phantom":3,"pharmacist":4,"pharmacy":3,"phase":4,"phenomenon":4,"philosopher":5,"philosophical":5,"philosophy":4,"phoenix":3,"phone":1,"photo":1,"photocopy":3,"photograph":1,"photographer":3,"photography":3,"phrasal verb":3,"phrase":1,"physical":2,"physically":2,"physician":5,"physics":2,"pi":4,"piano":1,"pick":2,"pickle":4,"picky":4,"picnic":1,"picture":1,"picturesque":4,"pie":3,"piece":1,"piety":3,"pig":1,"pile":4,"pilgrim":2,"pill":4,"pillow":3,"pillowcase":4,"pilot":2,"pin":3,"pine":4,"pineapple":3,"pink":1,"pink adj. ,":1,"pint":4,"pioneer":5,"pipe":3,"pipeline":5,"piracy":4,"pirate":5,"pit":5,"pitch":4,"pity":4,"pizza":1,"place":3,"placement":4,"plague":4,"plain":4,"plan":1,"plane":1,"planet":2,"planning":3,"plant":1,"plastic":2,"plate":2,"platform":2,"play":1,"play v. ,":1,"player":1,"playful":2,"playground":2,"playmate":4,"playwright":4,"plea":5,"plead":5,"pleasant":3,"pleasantly":3,"please":1,"pleased":2,"pleasing":2,"pleasure":3,"pledge v. ,":5,"plenty":3,"plot":3,"pluck":4,"plug":3,"plug v. ,":5,"plum":4,"plumber":4,"plunge":5,"plural":2,"plus 1":3,"plus 1 adj. , n.,":4,"pm":1,"pneumonia":4,"pocket":2,"pocket money":3,"poem":3,"poet":3,"poetry":3,"point":1,"point of view":4,"pointed":4,"pointless":4,"poison":3,"poisonous":3,"polar bear":4,"pole":5,"police":1,"police officer":2,"police station":2,"policeman":1,"policewoman":2,"policy":3,"polio":4,"polish":4,"polite":2,"politely":3,"politeness":4,"political":3,"politically":4,"politician":3,"politics":3,"polity":4,"poll":5,"pollutant":3,"pollute":2,"pollution":2,"polo":4,"pond":5,"ponder":4,"pool":1,"poor":1,"pop":2,"popcorn":3,"popular":1,"popularise":4,"popularity":4,"popularize":4,"population":2,"porch":4,"pork":3,"port":3,"portfolio":5,"portion":4,"portrait":3,"portray":5,"pose":4,"posh":4,"position":2,"positive":1,"positively":3,"possess":4,"possessed":4,"possession":2,"possessive":3,"possibility":2,"possible":1,"possibly":3,"post":1,"post office":2,"post-war":5,"postal":4,"postcard":3,"poster":2,"postman":3,"postpone":5,"pot":3,"potato":1,"potent":4,"potential":3,"potential adj. ,":4,"potentially":4,"pottery":3,"pound":1,"pour":3,"poverty":3,"powder":3,"power":2,"powerful":3,"powerfully":4,"practical":3,"practicality":4,"practically":4,"practice":1,"practise":1,"practitioner":5,"praise":4,"prance":4,"prawn":4,"pray":3,"prayer":3,"preach":5,"precede":4,"precedent":5,"precious":4,"precise":4,"precisely":4,"precision":5,"predator":5,"predecessor":5,"predicament":4,"predicate":4,"predicative":4,"predict":2,"predictable":4,"prediction":3,"predictive":4,"predictor":4,"predominantly":5,"prefect":4,"prefer":1,"preferable":4,"preferably":4,"preference":4,"prefix":3,"pregnancy":5,"pregnant":4,"prehistoric":4,"prehuman":4,"preindustrial":4,"prejudge":4,"prejudice":5,"preliminary":5,"premier":5,"premise":5,"premium":5,"preoccupy":4,"preparation":4,"prepare":1,"prepared":3,"preposition":3,"preschool":3,"prescribe":5,"prescription":5,"presence":4,"present":2,"present adj. ,":1,"presentation":3,"presenter":4,"presently":5,"preservation":5,"preserve":4,"preside":5,"presidency":5,"president":2,"presidential":5,"press":3,"pressure":3,"prestige":4,"prestigious":5,"presumably":5,"presume":5,"pretend":3,"pretty":1,"prevail":5,"prevalence":5,"prevent":2,"prevention":5,"preventive":4,"previous":3,"previously":3,"prey":5,"price":1,"priceless":4,"prick":4,"pride":4,"priest":3,"primarily":4,"primary":3,"primary school":3,"prime":4,"prime minister":4,"primitive":3,"prince":3,"princess":3,"principal":4,"principle":4,"print":2,"printer":2,"printing":3,"prior":4,"priority":4,"prison":2,"prisoner":3,"privacy":4,"private":3,"privately":4,"privatization":5,"privilege":5,"prize":2,"pro":2,"probability":4,"probable":4,"probably":1,"probe":5,"problem":1,"problematic":5,"procedure":4,"proceed":4,"proceedings":5,"proceeds":5,"process":2,"processing":5,"processor":5,"proclaim":5,"procrastination":3,"produce":2,"producer":3,"product":1,"production":3,"productive":5,"productivity":5,"profession":3,"professional":2,"professor":2,"profile":2,"profit":3,"profitable":5,"profound":5,"program":2,"programme":1,"programmer":4,"programming":4,"progress":4,"progressive":4,"prohibit":4,"prohibition":3,"project":1,"projection":5,"prom":4,"prominence":4,"prominent":5,"promise":2,"promise v. ,":2,"promising":4,"promote":3,"promotion":4,"prompt":4,"promptly":4,"pronoun":3,"pronounce":2,"pronounced":5,"pronunciation":2,"proof":4,"propaganda":5,"proper":3,"properly":3,"property":3,"proponent":4,"proportion":4,"proposal":4,"propose":4,"proposed":4,"proposition":5,"prose":4,"prosecute":5,"prosecution":5,"prosecutor":5,"prospect":4,"prosper":4,"prosperity":5,"prosperous":3,"protect":2,"protection":4,"protective":3,"protein":4,"protest":3,"protester":4,"proud":3,"proudly":4,"prove":3,"proven":4,"proverb":3,"provide":2,"provided":3,"province":4,"provision":4,"proximity":4,"psychological":4,"psychologically":4,"psychologist":4,"psychology":4,"pub":2,"public":2,"public adj. ,":2,"public transport":3,"publication":4,"publicise":4,"publicity":4,"publicize":4,"publicly":3,"publish":2,"publisher":3,"publishing":4,"pudding":4,"pull":2,"pullover":3,"pulse":4,"pump":3,"pumpkin":4,"punch":5,"punctual":4,"punctuality":4,"punctuation":2,"punish":3,"punishment":3,"punk":4,"pupil":4,"puppy":3,"purchase":4,"pure":4,"purely":4,"purify":3,"purple":1,"purple adj. ,":1,"purpose":2,"purposeful":4,"purse":3,"pursue":4,"pursuit":4,"push":2,"put":1,"puzzle":4,"puzzled":4,"pyjamas":4,"quake":3,"qualification":3,"qualified":3,"qualify":3,"qualify v.queue":3,"quality":2,"quantify":4,"quantity":2,"quarantine":4,"quarrel":4,"quarrelsome":4,"quarter":1,"queen":2,"queer":4,"query":5,"question":1,"question mark":3,"questionnaire":4,"queue":3,"quick":1,"quickly":1,"quiet":1,"quietly":2,"quit":3,"quite":1,"quiz":2,"quotable":4,"quotation":3,"quote":4,"quote v. ,":3,"rabbit":1,"race":3,"race (competition)":2,"race (people)":3,"racial":4,"racing":3,"racism":4,"racist":4,"racist adj. ,":4,"rack":4,"racket":2,"radar":4,"radiate":4,"radiation":4,"radical":4,"radically":4,"radio":1,"radium":4,"rafter":4,"rag":4,"rage":3,"rail":4,"railroad":3,"railway":2,"rain":1,"rainbow":4,"raincoat":2,"rainfall":3,"rainforest":3,"rainstorm":4,"rainy":1,"raise":2,"rally":5,"ram":4,"ramp":4,"random":4,"range":3,"ranger":4,"rank":4,"ranking":5,"rap":2,"rape":4,"rapid":4,"rapidly":4,"rare":3,"rarely":3,"rash":4,"raspberry":3,"rat":4,"rate":2,"rather":2,"rating":4,"ratio":5,"ration":3,"rational":3,"rattle":4,"ravage":4,"raw":4,"ray":2,"razor":3,"reach":2,"react":2,"reaction":3,"read":1,"reader":1,"readily":4,"reading":1,"ready":1,"real":1,"real estate":4,"realisation":4,"realise":2,"realistic":4,"reality":3,"realization":4,"realize":2,"really":1,"rear":4,"rearrange":3,"reason":1,"reasonable":4,"reasonably":4,"reasoning":5,"rebel":4,"rebellious":4,"rebuild":4,"recall":4,"receipt":3,"receive":2,"receiver":4,"recent":2,"recently":2,"reception":2,"receptionist":2,"recession":4,"recipe":2,"recite":3,"reckon":4,"reclaim":3,"recognise":3,"recognition":4,"recognize":2,"recollect":4,"recollection":4,"recommend":2,"recommendable":4,"recommendation":3,"reconsider":4,"record":2,"recording":2,"recover":4,"recovery":4,"recreation":4,"recruit":4,"recruit v. ,":4,"recruitment":4,"rectangular":4,"recycle":2,"recycled":3,"recycling":3,"red":1,"red adj. ,":1,"redo":4,"reduce":2,"reduction":4,"redundant":4,"reed":4,"reef":3,"refer":2,"referee":4,"reference":3,"referendum":5,"referent":4,"refinery":4,"reflect":3,"reflection":3,"reflective":4,"reform":4,"refrain":4,"refresh":4,"refreshments":3,"refrigerator":2,"refuge":5,"refugee":4,"refund":3,"refusal":3,"refuse 1":2,"refute":4,"regain":3,"regard":3,"regard v. ,":4,"regarding":3,"regardless":4,"reggae":4,"regime":4,"region":2,"regional":4,"register":3,"register v. ,":4,"registration":4,"regret":2,"regret v. ,":4,"regrettably":4,"regular":2,"regularly":3,"regulate":4,"regulation":4,"rehearsal":4,"reinforce":4,"reinforcement":4,"reject":3,"rejection":5,"rejoin":4,"relate":3,"related":3,"relation":3,"relationship":2,"relative":3,"relative adj. ,":3,"relatively":4,"relativity":4,"relax":1,"relaxation":4,"relaxed":3,"relaxing":3,"relay":4,"release":2,"release v. ,":3,"relevant":4,"reliable":3,"relic":4,"relief":4,"relieve":4,"relieved":4,"religion":3,"religious":3,"reluctant":4,"rely":4,"remain":3,"remainder":3,"remaining":4,"remains":4,"remark":4,"remarkable":4,"remarkably":4,"remedy":3,"remember":1,"remembrance":3,"remind":3,"reminder":4,"remote":3,"remote control":3,"remove":2,"renew":3,"rent":3,"rental":4,"reorganise":4,"reorganize":4,"repaint":4,"repair":2,"repay":3,"repeat":1,"repeated":3,"repeatedly":3,"repertoire":4,"repetition":4,"replace":2,"replacement":4,"replica":4,"reply":2,"reply v. ,":2,"report":1,"reporter":2,"reporting":4,"represent":3,"representative":4,"repress":4,"repression":4,"reprint":4,"reproduce":3,"reprove":4,"republic":3,"reputation":4,"request":2,"require":3,"requirement":4,"rescue":3,"rescue v. ,":4,"research":2,"researcher":2,"resemble":3,"reservation":3,"reserve":4,"residence":4,"resident":4,"residential":3,"residue":5,"resign":4,"resignation":5,"resist":4,"resistance":5,"resolution":4,"resolve":4,"resonant":4,"resort":4,"resource":3,"respect":3,"respectable":3,"respectably":4,"respected":4,"respective":5,"respectively":5,"respiration":4,"respiratory":4,"respond":2,"response":2,"responsibility":3,"responsible":3,"rest":3,"rest (remaining part)":2,"rest (sleep/relax)":2,"restaurant":1,"restoration":5,"restore":4,"restraint":5,"restrict":4,"restriction":4,"result":1,"resume":5,"retail":4,"retailer":4,"retain":4,"retard":4,"retell":3,"retina":4,"retire":3,"retired":3,"retirement":4,"retreat":5,"retrieve":5,"retrospect":3,"return":2,"return v. ,":1,"reunification":3,"reunify":3,"reunion":2,"reveal":4,"revelation":5,"reven ge":5,"revenge":4,"revenue":4,"reverence":4,"reverse":4,"reverse v. ,":5,"review":2,"revise":3,"revision":4,"revival":5,"revive":5,"revolution":4,"revolutionary":5,"revolutionise":4,"revolutionize":4,"revolve":4,"reward":4,"rewrite":3,"rhetoric":5,"rhinoceros":4,"rhyme":4,"rhythm":4,"rhythmic":4,"rib":4,"ribbon":1,"rice":1,"rich":1,"rid":4,"riddle":3,"ride":1,"rider":4,"ridge":4,"ridiculous":4,"rifle":5,"right":1,"right adj. , adv. ,":1,"right-hand":2,"righteousness":4,"rightly":4,"rim":4,"ring 1":2,"riot":5,"rip":5,"ripe":3,"rise":2,"risk":3,"risky":4,"rite":4,"ritual":5,"rival":4,"river":1,"road":1,"roadside":3,"roam":4,"roar":4,"roast":2,"rob":4,"robbery":4,"robin":2,"robot":3,"robust":5,"rock":5,"rock (music)":2,"rock (stone)":2,"rocket":4,"rocky":4,"rod":5,"role":2,"roll":2,"roll v. ,":3,"rolling":3,"romance":4,"romantic":3,"roof":2,"room":1,"roommate":4,"root":4,"rope":3,"rose":4,"rosy":4,"rotate":5,"rotation":5,"rotten":3,"rough":3,"roughly":4,"round":4,"round adj. , adv. ,":2,"roundabout":2,"route":2,"routine":1,"row 1":3,"royal":3,"royalty":4,"rub":4,"rubber":4,"rubbish":2,"rubble":4,"rude":2,"rudely":3,"rug":4,"rugby":3,"ruin":2,"ruin v. ,":4,"ruinous":4,"rule":1,"ruler":1,"ruling":5,"rumor":2,"rumour":5,"run":1,"runaway":3,"runner":2,"running":2,"runway":3,"rural":4,"rush":2,"rush hour":4,"rush v. ,":4,"rusty":4,"sack":5,"sacred":5,"sacrifice":5,"sad":1,"sadly":2,"sadly adv.safe":2,"sadness":3,"safari":3,"safe":2,"safeguard":3,"safely":3,"safety":3,"sag":4,"sage":4,"sail":2,"sailing":2,"sailor":3,"saint":5,"sake":5,"salad":1,"salary":2,"sale":2,"salesman":3,"salesmanship":4,"salesperson":4,"saleswoman":4,"salmon":3,"salon":4,"salsa":4,"salt":1,"salty":4,"same":1,"same adj. ,":1,"sample":3,"sanction":5,"sand":3,"sandal":3,"sandstone":4,"sandwich":1,"sandy":2,"sanitary":4,"sanitation":4,"satellite":4,"satisfaction":4,"satisfactory":4,"satisfied":4,"satisfy":4,"saturday":1,"sauce":2,"saucepan":3,"saucer":3,"sausage":2,"save":2,"saving":4,"savings":4,"saw":1,"say":1,"scale":4,"scan":3,"scandal":4,"scar":4,"scarcely":4,"scare":3,"scare v. ,":4,"scared":2,"scarf":2,"scarlet":4,"scary":2,"scatter":3,"scattered":5,"scenario":4,"scene":2,"scenery":2,"scenic":3,"scent":4,"sceptical":5,"schedule":2,"scheduled":4,"scheme":4,"scholar":4,"scholarship":4,"scholasticism":4,"school":1,"schoolchild":2,"schoolgirl":4,"schoolmate":3,"schoolteacher":3,"schoolwork":2,"science":1,"science fiction":3,"scientific":3,"scientifically":4,"scientist":1,"scissors":2,"scold":3,"scooter":4,"scope":5,"score":3,"score v. ,":2,"scramble":4,"scratch":3,"scratch v. ,":4,"scream":2,"scream v. ,":4,"screen":2,"screening":4,"screw":2,"screw v.,":5,"scribble":4,"script":3,"scrooge":4,"scrutiny":5,"scuba":4,"sculpture":3,"scythe":4,"sea":1,"seafood":2,"seal":4,"seal v.,":5,"search":2,"seaside":2,"season":2,"seasonal":4,"seat":2,"seawater":3,"seaweed":3,"second":1,"second 1 (next after the first)":1,"second 1 (unit of time)":1,"second person":4,"second-hand":3,"secondary":3,"secondary school":3,"secondly":2,"secret":2,"secret adj. ,":2,"secretary":2,"secretly":3,"section":1,"sector":4,"secular":5,"secure":4,"security":3,"see":1,"seed":3,"seek":4,"seeker":4,"seem":2,"seemingly":5,"seesaw":4,"segment":5,"seize":5,"seldom":5,"select":4,"selection":4,"selective":5,"self":4,"self-confidence":4,"self-confident":4,"self-service":3,"selfish":3,"selfless":4,"sell":1,"seller":4,"semester":2,"semi-final":4,"semicolon":4,"seminar":4,"senator":5,"send":1,"senior":4,"sensation":5,"sense":2,"sensible":4,"sensitive":4,"sensitivity":5,"sentence":1,"sentiment":5,"separate":2,"separately":4,"separation":5,"september":1,"sequence":4,"serene":4,"serial":5,"series":2,"serious":2,"seriously":3,"servant":3,"serve":2,"server":3,"service":2,"session":4,"set":1,"set (group)":3,"set (put)":3,"set-up":5,"setback":4,"setting":3,"settle":4,"settlement":5,"settler":4,"seven":1,"seventeen":1,"seventy":1,"several":2,"severe":4,"severely":4,"sew":2,"sex":3,"sexism":4,"sexual":3,"sexuality":5,"sexy":4,"shabby":4,"shade":4,"shadow":2,"shadowy":3,"shake":2,"shaken":4,"shakespearean":4,"shaky":4,"shall":2,"shallow":4,"shame":4,"shameful":3,"shampoo":2,"shape":2,"shaped":4,"share":1,"shareholder":5,"sharp":3,"sharply":4,"shatter":5,"shave":3,"she":1,"shed":5,"sheep":1,"sheer":5,"sheet":2,"shelf":3,"shell":3,"shelter":4,"sheriff":3,"shield":4,"shift":3,"shine":3,"shiny":3,"ship":2,"shipping":5,"shipwreck":4,"shirt":1,"shiver":3,"shock":4,"shocked":4,"shocking":4,"shoe":1,"shoot":3,"shooting":4,"shop":1,"shop assistant":2,"shopkeeper":4,"shoplift":4,"shoplifter":4,"shoplifting":4,"shopper":3,"shopping":1,"shore":4,"short":1,"short-term":4,"shortage":4,"shortly":4,"shortness":4,"shorts":2,"shot":4,"should":1,"shoulder":2,"shout":2,"shout v. ,":2,"show":1,"show v. ,":1,"showbiz":4,"showcase":4,"shower":1,"shrimp":3,"shrink":5,"shrug":5,"shut":2,"shy":3,"sibling":4,"sick":1,"sickness":3,"side":2,"sidewalk":3,"sigh":3,"sigh v .,":5,"sight":3,"sightseeing":2,"sign":2,"signal":3,"signature":4,"significance":4,"significant":4,"significantly":4,"signify":4,"signpost":3,"silence":4,"silent":3,"silently":2,"silk":4,"silly":3,"silver":2,"silverware":4,"similar":1,"similarity":3,"similarly":3,"simple":2,"simplification":4,"simplify":3,"simply":3,"simulate":5,"simulation":5,"simultaneous":4,"simultaneously":5,"sin":5,"since":2,"sincere":4,"sincerity":4,"sing":1,"singer":1,"singing":2,"single":2,"single adj. ,":2,"singular":2,"sink":3,"sir":2,"sister":1,"sister-in-law":4,"sit":1,"site":2,"sitting room":2,"situation":1,"six":1,"sixteen":1,"sixty":1,"size":2,"skate":2,"skateboard":4,"skateboarder":4,"skateboarding":2,"skating":2,"skeleton":3,"sketch":5,"ski":2,"ski v. , adj. ,":2,"skiing":2,"skilful":4,"skilfully":4,"skill":1,"skilled":4,"skillful":4,"skillfully":4,"skim":4,"skin":2,"skip":4,"skirt":1,"skull":4,"sky":2,"skylark":4,"skyscraper":3,"skyward":4,"slam":4,"slang":4,"slap":4,"slash":4,"slaughter":4,"slave":4,"slavery":3,"sleep":1,"sleepless":2,"sleepy":2,"sleeve":3,"slice":3,"slide":2,"slide v. ,":4,"slight":4,"slightly":3,"slim":2,"slip":4,"sliver":4,"slogan":4,"slope":4,"sloppy":4,"slot":3,"slow":1,"slowly":2,"small":1,"smart":3,"smartphone":2,"smash":4,"smell":1,"smell v. ,":2,"smile":1,"smile v. ,":2,"smith":1,"smoke":2,"smoker":3,"smokestack":4,"smoking":2,"smooth":3,"smoothly":2,"snack":2,"snake":1,"snap":4,"sneak":4,"sneer":4,"sneeze":3,"sniff":4,"snore":4,"snow":1,"snowball":4,"snowboard":3,"snowboarding":2,"snowstorm":3,"snowy":1,"so":1,"so adv. ,":1,"so-called":4,"soak":4,"soaked":4,"soaking":4,"soap":2,"soap opera":3,"soar":4,"sob":4,"soccer":2,"sociable":4,"social":2,"social networking":3,"socialise":4,"socialize":4,"socially":3,"society":2,"sock":2,"soda":2,"sofa":1,"soft":2,"soft drink":2,"softly":2,"softness":4,"software":3,"soil":3,"solar":4,"soldier":2,"solid":3,"solid adj. ,":3,"solidity":4,"soliloquy":4,"solo":4,"solution":2,"solve":2,"solvent":4,"some":1,"somebody":1,"someday":2,"somehow":4,"someone":1,"someplace":3,"something":1,"sometime":4,"sometimes":1,"somewhat":4,"somewhere":2,"somewhere adv. ,":2,"son":1,"son-in-law":4,"song":1,"sonnet":4,"soon":1,"soothe":3,"sophisticated":4,"sophomore":3,"sore":3,"sorrow":3,"sorry":1,"sorry adj. ,":1,"sort":2,"soul":4,"sound":1,"sound adj.sovereignty":5,"soundtrack":4,"soup":1,"sour":3,"source":2,"south":1,"southeast":3,"southern":3,"southward":4,"southwest":3,"souvenir":3,"soviet":4,"soybean":4,"spa":4,"space":1,"spaceship":2,"spaghetti":2,"span":4,"spare":4,"spare v.spark v.specialized adj.specification":5,"sparerib":4,"spark":4,"sparkle":3,"sparkling":4,"sparrow":4,"speak":1,"speaker":2,"special":1,"specialise":3,"specialist":4,"specialize":4,"specially":3,"specialty":4,"species":4,"specific":2,"specifically":3,"specify":4,"spectacle":4,"spectacular":4,"spectator":4,"speculate":4,"speculation":4,"speech":2,"speed":2,"speeder":4,"spell":1,"spellbound":4,"spelling":1,"spend":1,"spending":3,"sphere":3,"spice":4,"spicy":3,"spider":2,"spill":2,"spin":4,"spinach":3,"spine":5,"spiral":3,"spirit":3,"spiritual":4,"spite":4,"splash":2,"splatter":4,"split":2,"split v. ,":4,"spoil":4,"spoken":3,"spokesman":4,"spokesperson":4,"spokeswoman":4,"sponge":3,"sponsor":3,"sponsor v. ,":4,"sponsorship":4,"spoon":2,"sport":1,"sporting":4,"sports":3,"sports center":2,"sports centre":2,"sportsmanship":3,"spot":3,"spray":4,"spread":3,"spreadsheet":4,"spring":1,"sprint":4,"spur":4,"spy":1,"squad":5,"square":2,"square adj. ,":2,"squash":4,"squeeze":4,"stab":4,"stability":5,"stable":4,"stack":4,"stadium":3,"staff":3,"stage":2,"stagger":4,"stain":4,"stair":2,"stake":4,"stall":4,"stammer":4,"stamp":2,"stance":4,"stand":1,"standard":3,"standby":4,"standstill":4,"stanza":4,"star":1,"stare":4,"start":2,"start v.statement":1,"startle":4,"starvation":4,"starve":4,"starving":4,"state":2,"state adj. ,":3,"statement":2,"statesman":4,"statewide":4,"station":1,"statistic":3,"statistics":4,"statue":3,"status":4,"stay":1,"steadily":4,"steady":4,"steak":2,"steal":2,"steam":4,"steel":4,"steely":4,"steep":4,"steer":4,"steering wheel":4,"stem":3,"step":2,"stepfather":4,"stepmother":4,"stereotype":5,"stern":4,"stew":4,"stick":3,"stick (piece of wood)":3,"stick (push into/attach)":3,"sticker":3,"sticky":4,"stiff":4,"still":1,"stimulant":4,"stimulate":4,"stimulation":4,"stingy":4,"stink":4,"stir":3,"stitch":4,"stock":4,"stock market":4,"stockpile":4,"stomach":2,"stomachache":2,"stone":2,"stonework":4,"stool":4,"stop":1,"stop v. ,":1,"stopover":4,"stopwatch":4,"storage":3,"store":2,"storm":2,"stormy":3,"story":1,"storyteller":3,"stove":2,"straight":1,"straight adv. ,":2,"straighten":4,"straightforward":4,"strain":3,"strait":4,"strand":4,"strange":2,"strangely":3,"stranger":3,"strangle":4,"strategic":3,"strategy":2,"straw":3,"strawberry":3,"stream":4,"street":1,"strength":3,"strengthen":4,"stress":2,"stressed":3,"stressful":3,"stretch":3,"stretch v. ,":4,"stricken":3,"strict":4,"strictly":4,"stride":4,"strike":2,"strike v. ,":4,"striking":4,"string":3,"strip":3,"stripe":3,"strive":4,"stroke":4,"strong":1,"strongly":3,"structure":2,"struggle":3,"struggle v. ,":4,"stubborn":3,"stubbornly":4,"stuck":3,"student":1,"studio":3,"study":1,"stuff":3,"stuffed":3,"stumble":3,"stun":3,"stunning":4,"stupid":2,"style":1,"stylish":3,"stylist":4,"subconscious":3,"subcontinent":4,"subculture":4,"subdivision":4,"subject":1,"subjunctive":4,"submarine":3,"submit":4,"subplot":4,"subsequent":4,"subsequently":4,"subside":4,"substance":3,"substantial":3,"substitute":3,"substitution":5,"subtitle":4,"subtle":4,"subtract":4,"suburb":4,"subway":1,"succeed":2,"success":1,"successful":2,"successfully":3,"successive":4,"such":2,"suck":4,"sudden":3,"suddenly":2,"sue":4,"suffer":3,"suffering":4,"sufficient":4,"sufficiently":4,"suffix":3,"sugar":1,"suggest":2,"suggestion":2,"suicide":3,"suit":2,"suitable":3,"suitably":4,"suitcase":2,"sulfur":4,"sulphur":4,"sum":4,"summarise":3,"summarize":3,"summary":3,"summer":1,"summit":3,"sun":1,"sunbathe":3,"sunbeam":4,"sunday":1,"sundial":3,"sunflower":2,"sunglasses":2,"sunlight":2,"sunny":1,"sunrise":3,"sunset":3,"sunshine":1,"super":4,"superb":4,"superintendent":4,"superior":3,"superlative":2,"supermarket":1,"supernatural":4,"superstar":2,"superstition":3,"supervise":4,"supervision":4,"supervisor":4,"supper":2,"supplement":4,"supplier":4,"supply":3,"support":2,"support v. ,":2,"supporter":3,"supportive":3,"supportive adj.supposedly adv.suppress v.supreme adj.surge":5,"suppose":2,"supposedly":3,"suppress":4,"sure":1,"surely":3,"surf":1,"surface":3,"surfing":2,"surge":4,"surgeon":4,"surgery":4,"surgical adj.surplus":5,"surname":2,"surprise":2,"surprised":2,"surprising":2,"surprisingly":3,"surrender":4,"surround":4,"surrounding":4,"surroundings":4,"surveillance":4,"survey":2,"survival":4,"survive":3,"survivor":4,"suspect":3,"suspect v. ,":4,"suspend":4,"suspicion":3,"suspicious":4,"suspiciously":4,"sustain":4,"sustainable":4,"swallow":4,"swan":4,"swarm":3,"swear":4,"sweat":2,"sweater":1,"sweatshirt":3,"sweep":4,"sweet":1,"sweet adj. ,":2,"sweetheart":2,"swell":3,"swift":4,"swim":1,"swimmer":3,"swimming":1,"swimming costume":2,"swimming pool":1,"swimsuit":2,"swing":4,"switch":3,"swollen":3,"sword":5,"syllable":4,"symbol":2,"symbolic":4,"sympathetic":4,"sympathise":4,"sympathize":4,"sympathy":4,"symphony":2,"symptom":3,"syndrome":3,"synonym":4,"system":2,"systematic":3,"t-shirt":1,"table":1,"table tennis":2,"tablecloth":4,"tablespoon":2,"tablet":2,"tabloid":4,"tack":4,"tackle":4,"tactile":4,"tag":4,"tail":3,"take":1,"take-off":3,"takeaway":3,"takeoff":3,"tale":4,"talent":3,"talented":3,"talk":1,"talkative":3,"tall":1,"tame":4,"tan":4,"tank":4,"tanned":4,"tap":2,"tap v. ,":4,"tape":3,"target":2,"task":2,"taste":2,"tasteless":3,"tasty":3,"tatter":4,"tattoo":4,"taunt":4,"tax":3,"taxi":1,"tea":1,"teach":1,"teacher":1,"teaching":2,"team":1,"teammate":3,"teamwork":3,"tear 1 v.,":4,"tear 2":4,"tease":3,"teaspoon":4,"technical":3,"technically":4,"technique":3,"technological":4,"technology":2,"tee-shirt":1,"teen":3,"teenage":2,"teenager":1,"teens":4,"telecommunications":3,"telegram":3,"telephone":1,"telescope":4,"television":1,"tell":1,"teller":3,"temper":3,"temperate":4,"temperature":2,"temple":4,"temporarily":4,"temporary":4,"tempt":3,"temptation":4,"ten":1,"tend":3,"tendency":4,"tender":4,"tenderly":4,"tenderness":4,"tennis":1,"tense":3,"tension":4,"tent":3,"term":2,"term v.therapy":4,"terminal":4,"terms":4,"terrace":4,"terrible":1,"terribly":4,"terrific":3,"terrified":3,"terrify":4,"terrifying":4,"territory":4,"terror":4,"terrorism":4,"terrorist":4,"test":1,"testify":4,"testimony":4,"testing":4,"text":1,"text message":2,"textbook":4,"than":1,"thank":1,"thankful":3,"thanks":1,"that":1,"the":1,"theater":1,"theatre":1,"theft":4,"their":1,"theirs":3,"them":1,"theme":3,"themselves":2,"then":1,"theorist":4,"theory":3,"therapist":4,"therapy":4,"there":1,"thereafter":4,"therefore":3,"thermometer":4,"these":1,"thesis":4,"they":1,"thick":2,"thickly":4,"thickness":4,"thief":2,"thigh":4,"thin":2,"thing":1,"think":1,"thinker":4,"thinking":2,"third":1,"third person":4,"thirdly":4,"thirst":3,"thirsty":1,"thirteen":1,"thirty":1,"this":1,"thorough":4,"thoroughly":4,"those":1,"though":3,"thought":2,"thoughtful":4,"thoughtless":4,"thousand":1,"thread":4,"threat":4,"threaten":4,"threatening":3,"three":1,"thrill":4,"thrilled":4,"thriller":3,"thrilling":4,"throat":3,"through":1,"throughout":3,"throw":2,"thumb":4,"thump":3,"thunder":3,"thunderous":3,"thunderstorm":2,"thursday":1,"thus":4,"tick":3,"ticket":1,"tickle":4,"tide":3,"tidy":2,"tidy adj. ,":2,"tie":2,"tie v. ,":2,"tiger":1,"tight":3,"tighten":3,"tightly":3,"tightrope":4,"tights":2,"tile":3,"till":3,"time":1,"timeless":4,"timeliness":4,"timely":3,"times":4,"timetable":2,"timing":4,"tin":3,"tiny":3,"tip":2,"tiptoe":4,"tire":3,"tired":1,"tiredness":4,"tiresome":4,"tiring":3,"tissue":4,"title":1,"to":1,"toast":2,"tobacco":3,"today":1,"today adv. ,":1,"toe":3,"toenail":4,"together":1,"toil":4,"toilet":1,"tolerant":4,"tolerate":4,"toll":4,"tomato":1,"tomb":4,"tomorrow":1,"tomorrow adv. ,":1,"ton":4,"tone":4,"tongue":3,"tonight":1,"tonight adv. ,":1,"tonne":4,"too":1,"tool":2,"tooth":1,"toothache":2,"toothbrush":2,"toothpaste":3,"top":2,"topic":1,"torch":4,"tornado":3,"tortoiseshell":4,"torture":5,"toss":5,"total":5,"total adj. ,":3,"totally":3,"touch":2,"tough":4,"tour":2,"tour guide":2,"tourism":2,"tourist":1,"tournament":4,"toward":2,"towards":2,"towel":1,"tower":2,"town":1,"toxic":5,"toy":2,"trace":4,"track":2,"tracksuit":3,"trade":3,"trademark":5,"trader":4,"trading":4,"tradition":2,"traditional":2,"traditionally":3,"traffic":1,"traffic jam":3,"traffic light":2,"tragedy":4,"tragic":4,"trail":5,"trailer":5,"train":1,"trainee":4,"trainer":2,"training":2,"trait":4,"traitor":4,"tram":2,"tramp":4,"trample":4,"transaction":5,"transcript":5,"transfer":3,"transfer v. ,":4,"transform":4,"transformation":5,"transfusion":4,"transient":4,"transistor":4,"transit":5,"transition":4,"transitional":3,"transitive":4,"translate":3,"translation":3,"translator":4,"transmission":5,"transmit":4,"transparency":5,"transparent":5,"transport":2,"transportation":4,"trap":2,"trap v. ,":4,"trash":3,"trauma":5,"travel":1,"travel agent":3,"travel v. ,":1,"traveler":2,"traveller":2,"traverse":4,"tray":4,"tread":4,"treasure":2,"treat":3,"treatment":3,"treaty":5,"tree":1,"trek":4,"tremble":3,"tremendous":5,"tremendously":4,"tremor":4,"trend":3,"trial":4,"triangle":4,"tribal":5,"tribe":4,"tribunal":5,"tribute":5,"trick":3,"tricky":4,"trigger":4,"trillion":4,"trim":3,"trio":5,"trip":1,"triumph":5,"trivial":4,"trolley":4,"troop":4,"trophy":5,"tropic":4,"tropical":4,"trouble":2,"troublesome":4,"trousers":1,"truck":2,"true":1,"truly":4,"trumpet":3,"trunk":4,"trust":4,"trustee":5,"trustworthy":3,"trusty":4,"truth":3,"truthful":4,"truthfulness":4,"try":1,"tsunami":4,"tub":4,"tube":3,"tuberculosis":4,"tuesday":1,"tug":4,"tuition":5,"tulip":4,"tumble":3,"tumor":4,"tumour":4,"tuna":3,"tune":4,"tunnel":4,"turbulence":3,"turbulent":4,"turkey":1,"turn":1,"turn v. ,":1,"turning":3,"turnout":5,"turnover":5,"turtle":3,"tutor":4,"tv":1,"twelve":1,"twenty":1,"twice":1,"twin":2,"twinkle":4,"twist":3,"twist v. ,":5,"twisted":4,"two":1,"type":1,"typhoid":4,"typical":2,"typically":3,"tyranny":4,"tyrant":4,"tyre":3,"ugly":3,"ultimate":4,"ultimately":4,"umbrella":1,"unable":3,"unacceptable":4,"unafraid":3,"unashamedly":4,"unattractive":4,"unauthorised":4,"unauthorized":4,"unavailable":4,"unaware":4,"unbearable":4,"unbeatable":4,"unbelievable":3,"uncertain":2,"uncertainty":4,"unchanged":4,"uncharacteristic":4,"uncle":1,"unclear":3,"unclearly":4,"uncomfortable":3,"uncomfortably":4,"uncommon":4,"unconcerned":4,"unconscious":4,"uncontrollable":3,"uncover":3,"under":1,"underage":3,"underestimate":4,"undergo":4,"undergraduate":5,"underground":2,"underline":1,"underlying":5,"undermine":5,"underneath":3,"underpants":3,"undersea":4,"understand":1,"understandable":4,"understanding":2,"undertake":4,"underwater":2,"underwear":3,"undo":3,"undoubtedly":5,"undreamed":4,"undress":3,"undressed":4,"unease":4,"uneasily":4,"uneasy":2,"unemployed":3,"unemployment":3,"unenthusiastic":4,"uneven":4,"unexpected":4,"unexpectedly":3,"unfair":3,"unfairly":3,"unfamiliar":4,"unfashionable":4,"unfit":3,"unfold":4,"unforeseen":4,"unforgettable":2,"unfortunate":4,"unfortunately":2,"unfriendly":3,"ungodly":4,"unhappiness":4,"unhappy":2,"unhealthy":2,"unheard":3,"unhelpful":4,"uniform":2,"unify":5,"unimaginable":4,"unimaginably":4,"unimportant":2,"uninterested":3,"uninteresting":3,"union":3,"unique":4,"unit":2,"unite":4,"united":2,"unity":4,"universal":4,"universe":4,"university":1,"unjustly":4,"unkind":4,"unknown":4,"unless":3,"unlike":3,"unlikely":3,"unlimited":4,"unload":4,"unlock":4,"unlucky":3,"unmistakable":4,"unmistakably":4,"unnatural":4,"unnecessary":3,"unofficial":4,"unpack":3,"unpleasant":3,"unpopular":4,"unprecedented":5,"unpredictable":3,"unrealistic":4,"unreasonable":4,"unrelated":3,"unreliable":4,"unrest":4,"unsafe":4,"unsatisfactory":4,"unselfish":4,"unstoppable":4,"unsuccessful":4,"unsuitable":4,"unsure":4,"untalented":4,"unthinkably":4,"untidy":3,"untie":4,"until":1,"unto":4,"untreated":4,"untrimmed":4,"unusual":2,"unusually":3,"unusualness":4,"unveil":5,"unwanted":3,"unwell":3,"unwilling":4,"unwise":4,"unworldly":4,"up":1,"up adv. ,":1,"up-to-date":3,"upbringing":4,"upcoming":5,"update":3,"update v. ,":3,"upgrade":4,"upgrade v. ,":5,"uphold":5,"uplifted":3,"upload":3,"upon":3,"upper":4,"upright":4,"upset":2,"upset adj. ,":3,"upside down":4,"upstairs":1,"upward":3,"upwards":4,"urban":4,"urge":4,"urgent":4,"urgently":4,"us":1,"usage":4,"use":1,"used 1":3,"used to":2,"useful":1,"useless":4,"user":2,"usher":4,"usual":2,"usually":1,"utilise":4,"utility":5,"utilize":5,"utter":4,"utterly":5,"vacancy":3,"vacant":4,"vacation":1,"vaccine":4,"vacuum":5,"vague":5,"vain":3,"valentine":4,"valid":4,"validity":5,"valley":2,"valuable":3,"value":3,"van":2,"vanish":5,"vanity":4,"variable":5,"variation":4,"varied":5,"variety":2,"various":3,"vary":4,"vase":1,"vast":4,"vegetable":1,"vegetarian":3,"vehicle":2,"vein":5,"venture":4,"venue":4,"verb":2,"verbal":5,"verbally":4,"verdict":5,"verify":5,"verse":5,"version":3,"versus":5,"vertical":4,"very":1,"vessel":5,"vet":3,"veteran":5,"via":4,"viable":5,"vibrant":5,"vibrate":4,"vibration":4,"vice":5,"vice president":3,"vicious":5,"victim":3,"victory":4,"video":1,"video clip":3,"video game":2,"view":2,"viewer":3,"viewpoint":4,"vigor":4,"vigorous":4,"vigorously":4,"vigour":4,"villa":4,"village":1,"villager":5,"vinegar":4,"violate":5,"violation":5,"violence":4,"violent":3,"violently":3,"violin":2,"virtual":4,"virtual reality":4,"virtually":4,"virtue":5,"virus":2,"visa":4,"visible":4,"visibly":4,"vision":4,"visit":1,"visit v. ,":1,"visitor":1,"visual":4,"visually":3,"vital":4,"vitamin":4,"vivid":3,"vividly":3,"vocabulary":2,"vocal":5,"vocalist":4,"voice":2,"volcano":3,"volleyball":1,"volume":4,"voluntary":4,"volunteer":3,"vomit":4,"vote":3,"voter":4,"voting":4,"vow":5,"vowel":3,"voyage":3,"vulnerability":5,"vulnerable":5,"wage":4,"wagon":3,"waist":4,"waistcoat":4,"wait":1,"waiter":1,"waitress":1,"wake":1,"walk":1,"walk v. ,":1,"walkabout":4,"walker":4,"walking":2,"wall":1,"wallboard":4,"wallet":2,"walnut":4,"wander":4,"want":1,"war":2,"ward":5,"wardrobe":3,"warehouse":5,"warfare":5,"warm":1,"warming":4,"warmly":3,"warmth":3,"warn":3,"warning":3,"warrant":5,"warranty":3,"warrior":5,"warship":4,"wartime":4,"was":1,"wash":1,"washbowl":3,"washing":2,"washing machine":2,"washing-up":2,"wasp":4,"waste":3,"wasteful":3,"watch":1,"watch v. ,":1,"water":1,"waterfall":3,"waterproof":4,"wave":2,"wax":3,"way":1,"we":1,"weak":2,"weaken":5,"weakly":4,"weakness":4,"wealth":4,"wealthy":4,"weapon":3,"wear":1,"wearisome":4,"weary":4,"weather":1,"weather forecast":3,"weave":4,"web":2,"web page":2,"webcam":3,"website":1,"wed":4,"wedding":2,"wednesday":1,"weed":5,"week":1,"weekday":2,"weekend":1,"weekly":4,"weep":2,"weigh":3,"weight":2,"weird":4,"welcome":1,"welfare":4,"well":5,"well adv. , adj. ,":1,"well-balanced":4,"well-being":5,"well-built":4,"well-dressed":3,"well-known":2,"well-organised":4,"well-organized":4,"well-paid":4,"were":1,"west":1,"western":3,"westward":3,"wet":2,"wetland":3,"whale":3,"what":1,"whatever":3,"whatsoever":5,"wheat":4,"wheel":2,"wheelchair":2,"when":1,"when adv. ,":1,"whenever":3,"where":1,"where adv. ,":1,"whereas":4,"whereby":5,"wherever":4,"whether":3,"which":1,"whichever":3,"while":2,"whilst":5,"whip":5,"whiskey":4,"whisky":4,"whisper":3,"whisper v. ,":4,"whistle":3,"white":1,"white adj. , n.who":1,"who":1,"whoever":4,"whole":2,"wholly":5,"whom":4,"whose":2,"why":1,"wide":2,"widely":4,"widen":5,"widespread":4,"widow":5,"width":5,"wife":1,"wild":2,"wilderness":4,"wildlife":4,"wildly":3,"will":1,"willing":4,"willingly":4,"willingness":5,"win":1,"wind 1":2,"winding":4,"window":1,"windscreen":3,"windshield":4,"windsurfing":3,"windy":2,"wine":1,"wing":3,"wink":4,"winner":2,"winter":1,"wipe":5,"wire":4,"wisdom":4,"wise":4,"wish":1,"wish v. ,":2,"wit":5,"with":1,"withdraw":4,"withdrawal":5,"wither":3,"within":3,"without":1,"witness":4,"witty":4,"wizard":3,"wolf":4,"woman":1,"wonder":2,"wonder v. ,":3,"wonderful":1,"wondrous":4,"wood":2,"woodcarving":4,"wooden":2,"wool":3,"word":1,"wordlessly":4,"work":1,"work v. ,":1,"workaholic":4,"workbench":4,"worker":1,"workforce":4,"working":2,"workman":4,"workout":5,"workplace":4,"workshop":4,"worktable":4,"world":1,"worldly":4,"worldview":4,"worldwide":3,"worm":4,"worn":3,"worn out":4,"worn-out":4,"wornout":4,"worried":2,"worry":2,"worrying":4,"worse":2,"worsen":4,"worship":5,"worst":2,"worth":3,"worthless":4,"worthwhile":5,"worthy":5,"would":1,"wound":4,"wow":2,"wrap":4,"wrapping":3,"wreck":4,"wrist":4,"wristwatch":3,"write":1,"writer":1,"writing":1,"written":3,"wrong":1,"wrongly":4,"x-ray":4,"yacht":4,"yard":3,"yawn":4,"yeah":1,"year":1,"yearn":4,"yell":5,"yellow":1,"yellow adj. ,":1,"yes":1,"yesterday":1,"yesterday adv. ,":1,"yet":2,"yield":5,"yoga":3,"yoghurt":1,"yogurt":1,"you":1,"young":1,"youngster":5,"your":1,"yours":2,"yourself":1,"youth":3,"youthful":4,"yummy":4,"zebra":4,"zero":2,"zip":4,"zone":4,"zoo":1,"zoom":4};
+
+
+  function __normWord(s){
+    return (s||"").toString().trim().toLowerCase().replace(/\s+/g," ");
+  }
+  function suggestLevelFromCEFRJ(word){
+    const k = __normWord(word);
+    return __CEFRJ_LV[k] || null;
+  }
+  function updateCdAutoLvHint(forceFill){
+    const chk = document.getElementById("cd_autoLevel");
+    const elEn = document.getElementById("cd_en");
+    const elLv = document.getElementById("cd_level");
+    const hint = document.getElementById("cd_lvHint");
+    if(!chk || !elEn || !elLv || !hint) return;
+    if(!chk.checked){ hint.textContent=""; return; }
+    const lv = suggestLevelFromCEFRJ(elEn.value);
+    if(lv){
+      const shouldFill = forceFill || (String(elLv.value||"").trim()==="") || (elLv.dataset.autoFilled!=="0");
+      if(shouldFill){
+        elLv.value = String(lv);
+        elLv.dataset.autoFilled = "1";
+      }
+      hint.textContent = `自動Lv: ${lv}（${__CEFRJ_DICT_NAME}）`;
+    }else{
+      hint.textContent = `自動Lv: 該当なし（${__CEFRJ_DICT_NAME}）`;
+    }
+  }
+  function installCustomDeckAutoLv(){
+    const elEn = document.getElementById("cd_en");
+    const elLv = document.getElementById("cd_level");
+    const chk = document.getElementById("cd_autoLevel");
+    if(elEn) elEn.addEventListener("input", ()=> updateCdAutoLvHint(false));
+    if(elLv) elLv.addEventListener("input", ()=>{ elLv.dataset.autoFilled="0"; });
+    if(chk) chk.addEventListener("change", ()=> updateCdAutoLvHint(true));
+  }
+
+
+  // =========================
+  // Debug helper (custom deck)
+  // =========================
+  function cdDebug(msg){
+    try{
+      const el = document.getElementById("cd_debug");
+      if(el) el.textContent = msg;
+    }catch(e){}
+  }
+  window.addEventListener("error", (ev)=>{
+    try{
+      const m = (ev && (ev.message || ev.error?.message)) || "unknown error";
+      cdDebug("JSエラー: " + m);
+    }catch(e){}
+  });
 
 // ===== TTS LOCK (stale-safe) =====
 // 音声は「同じブラウザ内の別タブ」と競合しやすいので、localStorageで簡易ロックします。
@@ -670,17 +810,146 @@ document.addEventListener("visibilitychange", () => {
     { en:"no problem", ja:"問題ないよ", level:1 },
     { en:"take away", ja:"持っていく／取り除く", level:2 },
   ];
+  const BUILTIN_WORDS_ALL = JSON.parse(JSON.stringify(WORDS_ALL)); // 内蔵データの退避
+
 
   WORDS_ALL = WORDS_ALL.map(w => ({...w, lang: w.lang || w.en_lang || 'en-US'}));
   let WORDS = WORDS_ALL.slice();
   let CURRENT_CSV_NAME = "内蔵データ";
-  let CURRENT_CSV_HASH = "builtin"; // CSV内容ベースの指紋（SHA-256）
+  let CURRENT_CSV_HASH = "builtin";
+
+  // =========================
+  // Last CSV persistence (v75)
+  // =========================
+  const LAST_CSV_NAME_KEY = "hamaru_last_csv_name_v1";
+  const LAST_CSV_HASH_KEY = "hamaru_last_csv_hash_v1";
+  const LAST_CSV_ITEMS_KEY = "hamaru_last_csv_items_v1";
+
+  function restoreAllFromLastCsvIfNeeded(){
+    try{
+      const name = localStorage.getItem(LAST_CSV_NAME_KEY);
+      const hash = localStorage.getItem(LAST_CSV_HASH_KEY);
+      const raw  = localStorage.getItem(LAST_CSV_ITEMS_KEY);
+      if(!name || !hash || !raw) return false;
+
+      // すでに同じなら何もしない
+      if(hash === CURRENT_CSV_HASH && name === CURRENT_CSV_NAME) return false;
+
+      const items = JSON.parse(raw);
+      if(!Array.isArray(items) || items.length < 4) return false;
+
+      const norm = items.map(it=>({
+        en: (it?.en ?? "").toString().trim(),
+        ja: (it?.ja ?? "").toString().trim(),
+        level: clamp(Number(it?.level ?? 1) || 1, 1, 99),
+        lang: (it?.lang ?? it?.en_lang ?? "").toString().trim(),
+        en_lang: (it?.en_lang ?? "").toString().trim(),
+        ja_lang: (it?.ja_lang ?? "").toString().trim(),
+        tts: (it?.tts ?? "").toString().trim()
+      })).filter(it=>it.en && it.ja);
+
+      if(norm.length < 4) return false;
+
+      CURRENT_CSV_NAME = name;
+      CURRENT_CSV_HASH = hash;
+      WORDS_ALL = norm;
+      WORDS = WORDS_ALL.slice();
+
+      try{ applyDeckFilter(); }catch(e){}
+      try{ renderHud(); }catch(e){}
+      try{
+        const el = document.getElementById("lastCsvStatus");
+        if(el) el.textContent = `✅ 前回CSVを復元: ${name}`;
+      }catch(e){}
+      try{
+        const el = document.getElementById("csvStatus");
+        if(el) el.textContent = `✅ 前回CSVを復元: ${name}（${norm.length}語）`;
+      }catch(e){}
+      return true;
+    }catch(e){
+      return false;
+    }
+  }
+
+  function forgetLastCsv(){
+    try{
+      localStorage.removeItem(LAST_CSV_NAME_KEY);
+      localStorage.removeItem(LAST_CSV_HASH_KEY);
+      localStorage.removeItem(LAST_CSV_ITEMS_KEY);
+    }catch(e){}
+
+    // 内蔵データへ戻す
+    try{
+      WORDS_ALL = JSON.parse(JSON.stringify(BUILTIN_WORDS_ALL))
+        .map(w => ({...w, lang: w.lang || w.en_lang || "en-US"}));
+      WORDS = WORDS_ALL.slice();
+      CURRENT_CSV_NAME = "内蔵データ";
+      CURRENT_CSV_HASH = "builtin";
+
+      // 復習の残骸を消す（出題0対策）
+      try{ if (elReviewMode) elReviewMode.value = "off"; }catch(e){}
+      try{ REVIEW_SET = []; }catch(e){}
+
+      try{ applyDeckFilter(); }catch(e){}
+      try{ renderHud(); }catch(e){}
+      try{ resetGame(); }catch(e){}
+
+      try{
+        const el = document.getElementById("lastCsvStatus");
+        if(el) el.textContent = "（前回CSVなし）";
+      }catch(e){}
+      try{
+        const el = document.getElementById("csvStatus");
+        if(el) el.textContent = "🧹 前回CSVを忘れました（内蔵データに戻しました）";
+      }catch(e){}
+    }catch(e){}
+  }
+  // =========================
+  // Quiz Mode: single / mix
+  // =========================
+  const QUIZ_MODE_KEY = "hamaru_quiz_mode_v1";
+  function loadQuizMode(){
+    try{ return localStorage.getItem(QUIZ_MODE_KEY) || "single"; }catch(e){ return "single"; }
+  }
+  function saveQuizMode(v){
+    try{ localStorage.setItem(QUIZ_MODE_KEY, v); }catch(e){}
+  }
+  let QUIZ_MODE = loadQuizMode();
+
+  function keyForWord(w){
+    const en = (w.en||"").toString().trim();
+    const ja = (w.ja||"").toString().trim();
+    const lang = (w.lang||w.en_lang||"").toString().trim();
+    return (en+"||"+ja+"||"+lang).toLowerCase();
+  }
+  function mergeUnique(a,b){
+    const seen = new Set();
+    const out = [];
+    for(const src of [a,b]){
+      for(const w of (src||[])){
+        const k = keyForWord(w);
+        if(seen.has(k)) continue;
+        seen.add(k);
+        out.push(w);
+      }
+    }
+    return out;
+  }
+  function getWordsAllForQuiz(){
+    if(QUIZ_MODE === "mix"){
+      // 内蔵 + 現在の単語帳（どちらが先でもOKだが、いまの単語帳優先で並べる）
+      return mergeUnique(WORDS_ALL, BUILTIN_WORDS_ALL);
+    }
+    return WORDS_ALL;
+  }
+
+ // CSV内容ベースの指紋（SHA-256）
 
   // =========================
   // Daily learning log (per CSV hash) ✅ 今日 / 履歴 / 連続
   // =========================
-  const DAILY_PREFIX = "hamaru_daily_v1::";           // per day + csvhash
-  const DAILY_HISTORY_PREFIX = "hamaru_daily_hist_v1::"; // per csvhash list
+  const DAILY_PREFIX = "hamaru_daily_v68::";           // per day + csvhash
+  const DAILY_HISTORY_PREFIX = "hamaru_daily_hist_v68::"; // per csvhash list
   let DAILY = { date:"", seen:0, correct:0, wrong:0, skip:0, updatedAt:0 };
 
   function jstDateKey(d=new Date()){
@@ -851,6 +1120,7 @@ const elDirection = document.getElementById("direction");
   const elReviewWeight = document.getElementById("reviewWeight");
   const elRounds = document.getElementById("rounds");
 
+  const elQuizMode = document.getElementById("quizMode");
   const elDeckSelect = document.getElementById("deckSelect");
   const elDeckStatus = document.getElementById("deckStatus");
 
@@ -1102,7 +1372,9 @@ const elGlobalWeakThreshold = document.getElementById("globalWeakThreshold");
   }
 
   function langPass(w) {
-    const l = normLang(w?.lang || w?.en_lang);
+    const raw = (w?.lang || w?.en_lang || "").toString();
+    const primary = raw.split(/[\/\,\s]+/)[0];
+    const l = normLang(primary);
     if (SELECTED_LANGS.size === 0) return true; // all
     return SELECTED_LANGS.has(l);
   }
@@ -1389,7 +1661,7 @@ function reviewStorageKey(){ return reviewStorageKeyFor(CURRENT_CSV_HASH); }
   // =========================
   // CSV index (filename -> hashes) for overwrite detection
   // =========================
-  const CSV_INDEX_KEY = "hamaru_csv_index_v1";
+  const CSV_INDEX_KEY = "hamaru_csv_index_v68";
   function loadCsvIndex(){
     try {
       const raw = localStorage.getItem(CSV_INDEX_KEY);
@@ -1581,16 +1853,7 @@ function reviewStorageKey(){ return reviewStorageKeyFor(CURRENT_CSV_HASH); }
 
     let html = `
 <table style="width:100%;border-collapse:collapse;">
-  <thead>
-    <tr>
-      <th style="text-align:left;padding:6px;border-bottom:1px solid rgba(255,255,255,.12);">単語</th>
-      <th style="text-align:right;padding:6px;border-bottom:1px solid rgba(255,255,255,.12);">正解率</th>
-      <th style="text-align:right;padding:6px;border-bottom:1px solid rgba(255,255,255,.12);">出題</th>
-      <th style="text-align:right;padding:6px;border-bottom:1px solid rgba(255,255,255,.12);">不正解</th>
-      <th style="text-align:left;padding:6px;border-bottom:1px solid rgba(255,255,255,.12);">由来（CSVごと）</th>
-    </tr>
-  </thead>
-  <tbody>
+<tbody>
 `;
     for (const a of top){
       const accPct = a.seen ? Math.round((a.correct/a.seen)*100) : 0;
@@ -1756,7 +2019,7 @@ function reviewStorageKey(){ return reviewStorageKeyFor(CURRENT_CSV_HASH); }
   function applyDeckFilter() {
     const v = elDeckSelect ? elDeckSelect.value : "all";
 
-    // ★重要: 「全部」は level でフィルターしない（CSVがLv5やLv10でも動くように）
+    // ★重要: 「全部」は level でフィルターしない（CSVがLv68やLv68でも動くように）
     let allowed = null; // null = allow all levels
     if (v === "1") allowed = new Set([1]);
     if (v === "2") allowed = new Set([2]);
@@ -1764,7 +2027,9 @@ function reviewStorageKey(){ return reviewStorageKeyFor(CURRENT_CSV_HASH); }
     if (v === "12") allowed = new Set([1,2]);
     if (v === "23") allowed = new Set([2,3]);
 
-    WORDS = WORDS_ALL
+    const BASE_ALL = getWordsAllForQuiz();
+
+    WORDS = BASE_ALL
       .filter(w => !allowed || allowed.has(Number(w.level ?? 0)))
       .map(w => ({
         en: w.en, ja: w.ja,
@@ -1773,7 +2038,8 @@ function reviewStorageKey(){ return reviewStorageKeyFor(CURRENT_CSV_HASH); }
       }));
 
     const name = (v === "all") ? "全部" : v;
-    elDeckStatus.textContent = `デッキ: ${name}（${WORDS.length}語）`;
+    const modeLabel = (QUIZ_MODE === "mix") ? "ミックス" : "単独";
+    elDeckStatus.textContent = `デッキ: ${name} / モード: ${modeLabel}（${WORDS.length}語）`;
   }
 
   // =========================
@@ -2103,8 +2369,9 @@ function reviewStorageKey(){ return reviewStorageKeyFor(CURRENT_CSV_HASH); }
     return (getDirection() === "ja2en") ? w.en : w.ja;
   }
   function getChoicePool() {
-    // 選択肢は「答え側」
-    return WORDS.map(w => getAnswerText(w));
+    // 選択肢は「答え側」：出題に使う実リスト（言語/復習/モード）と揃える
+    const base = (Array.isArray(ACTIVE_WORDS_FOR_QUIZ) && ACTIVE_WORDS_FOR_QUIZ.length) ? ACTIVE_WORDS_FOR_QUIZ : WORDS;
+    return base.map(w => getAnswerText(w));
   }
   function buildChoices(word) {
     const answer = getAnswerText(word);
@@ -2518,7 +2785,8 @@ function reviewStorageKey(){ return reviewStorageKeyFor(CURRENT_CSV_HASH); }
       }
     }
 
-    deck = shuffle(ACTIVE).map(w => ({...w}));
+    ACTIVE_WORDS_FOR_QUIZ = ACTIVE;
+        deck = shuffle(ACTIVE).map(w => ({...w}));
     totalPlanned = Infinity;
     askedCount = 0;
   }
@@ -2540,9 +2808,19 @@ function reviewStorageKey(){ return reviewStorageKeyFor(CURRENT_CSV_HASH); }
 
     let ACTIVE = filterByLang(WORDS);
     const mode = elReviewMode?.value ?? "off";
-    if (mode === "on" && REVIEW_SET.length >= 4) ACTIVE = filterByLang(REVIEW_SET);
+    if (mode === "on" && REVIEW_SET.length >= 4) {
+      const tmp = filterByLang(REVIEW_SET);
+      if (tmp.length >= 4) {
+        ACTIVE = tmp;
+      } else {
+        // 復習セットが言語/条件で足りない時は通常リストへ戻す（出題0を防ぐ）
+        ACTIVE = filterByLang(WORDS);
+      }
+    }
 
-    debugActiveStatus(ACTIVE);
+    ACTIVE_WORDS_FOR_QUIZ = ACTIVE;
+
+        debugActiveStatus(ACTIVE);
 
     if (SELECTED_LANGS.size > 0 && ACTIVE.length === 0) {
       showFlash("bad", "選んだ言語の単語が0件だよ（復習モード中なら復習データがその言語に無い場合もあるよ）");
@@ -2814,6 +3092,8 @@ elCsvFile.addEventListener("change", async (e) => {
       try{ if (elDeckSelect) elDeckSelect.value = "all"; }catch(e){}
       try{ if (elReviewMode) elReviewMode.value = "off"; }catch(e){}
       try{ REVIEW_SET = []; }catch(e){}
+
+  try{ SELECTED_LANGS?.clear?.(); }catch(e){}
       try{ SELECTED_LANGS = new Set(); }catch(e){} // すべて
       try{ if (typeof renderLangFilterOptions === "function") renderLangFilterOptions(); }catch(e){}
 
@@ -2897,90 +3177,814 @@ try{
     });
   }catch(e){}
 
-// Keyboard shortcuts
-  window.addEventListener("keydown", (e) => {
-    if (overlayDepth > 0) return;
-    const k = e.key.toLowerCase();
-    if (k >= "1" && k <= "4") {
-      const idx = parseInt(k, 10) - 1;
-      const btn = elChoices.querySelectorAll("button.choice")[idx];
-      if (btn && !btn.disabled) btn.click();
-    }
-    if (k === "s") elSkip.click();
-    if (k === "r") elRestart.click();
-    if (k === "p") speakCurrent();
-    if (k === "x") stopSpeech();
-  });
 
-  // voices can load async
-  if (window.speechSynthesis) {
-    window.speechSynthesis.onvoiceschanged = () => listVoices();
+  // =========================================================
+  // Global fallbacks (v74): ensure functions exist for inline UI
+  // =========================================================
+  // Some environments need these on window/global scope.
+  if(typeof window.saveTranslateLang!=="function"){
+    window.saveTranslateLang = function(v){ try{ localStorage.setItem("hamaru_custom_translate_lang", String(v||"en")); }catch(e){} };
+  }
+  if(typeof window.loadTranslateLang!=="function"){
+    window.loadTranslateLang = function(){ try{ return localStorage.getItem("hamaru_custom_translate_lang")||"en"; }catch(e){ return "en"; } };
+  }
+  if(typeof window.getLocaleForTts!=="function"){
+    window.getLocaleForTts = function(choice){
+      const m = {
+        "en":"en-US","fr":"fr-FR","it":"it-IT","de":"de-DE","es":"es-ES",
+        "ko":"ko-KR","zh-TW":"zh-TW","zh-CN":"zh-CN","ja":"ja-JP"
+      };
+      return m[String(choice||"en")] || "en-US";
+    };
+  }
+  if(typeof window.getLangPairForDeck!=="function"){
+    window.getLangPairForDeck = function(choice){
+      const loc = window.getLocaleForTts(choice);
+      return `${loc}/ja-JP`;
+    };
+  }
+  if(typeof window.getChosenTranslateLang!=="function"){
+    window.getChosenTranslateLang = function(){
+      try{
+        const top = document.getElementById("customDeckLangChoiceTop");
+        if(top && top.value) return top.value.trim();
+      }catch(e){}
+      try{
+        const sel = document.getElementById("cd_langChoice");
+        if(sel && sel.value) return sel.value.trim();
+      }catch(e){}
+      try{ return window.loadTranslateLang(); }catch(e){ return "en"; }
+    };
   }
 
+  // IMPORTANT: Provide the function name that inline handlers call.
+  if(typeof window.syncTtsLangFromTranslateChoice!=="function"){
+    window.syncTtsLangFromTranslateChoice = function(force=true){
+      try{
+        const choice = window.getChosenTranslateLang();
+        const pair = window.getLangPairForDeck(choice);
+
+        // Try panel elements first
+        const panel = document.getElementById("customDeckPanel");
+        let sel = null;
+        let inp = null;
+
+        // lang select
+        sel = document.getElementById("cd_lang_select");
+        if(!sel && panel){
+          const sels = Array.from(panel.querySelectorAll("select"));
+          // choose select that contains "/ja-JP" options
+          for(const s of sels){
+            const hasPair = Array.from(s.options||[]).some(o => (o.value||"").includes("/ja-JP"));
+            if(hasPair){ sel = s; break; }
+          }
+        }
+
+        // custom input (white field)
+        inp = document.getElementById("cd_lang");
+        if(!inp && panel){
+          const inputs = Array.from(panel.querySelectorAll("input"));
+          for(const i of inputs){
+            const ph = (i.getAttribute("placeholder")||"");
+            if(ph.includes("カスタム（例:")){ inp = i; break; }
+          }
+        }
+
+        if(sel){
+          const exists = Array.from(sel.options||[]).some(o => (o.value||"") === pair);
+          if(!exists){
+            const opt = document.createElement("option");
+            opt.value = pair; opt.textContent = pair;
+            sel.appendChild(opt);
+          }
+          sel.value = pair;
+          try{ sel.dispatchEvent(new Event("change", {bubbles:true})); }catch(e){}
+        }
+        if(inp){
+          if(force) inp.value = pair;
+          else if(!inp.value.trim()) inp.value = pair;
+          inp.placeholder = `カスタム（例: ${pair}）`;
+          try{ inp.dispatchEvent(new Event("input", {bubbles:true})); }catch(e){}
+          try{ inp.dispatchEvent(new Event("change", {bubbles:true})); }catch(e){}
+        }
+
+        // update bottom preview if present
+        try{
+          const t = document.getElementById("customDeckLocalePreviewTop");
+          if(t) t.textContent = pair;
+        }catch(e){}
+      }catch(e){}
+    };
+  }
+
+
+  // Custom Deck UI
   
-// ===== Last CSV persistence (mobile-friendly) =====
-// スマホでタブを閉じても「前回読み込んだCSV」を復元できるように保存します。
-// ※localStorage容量により、超巨大CSVは保存できない場合があります（その時は内蔵に戻ります）。
-const LAST_CSV_NAME_KEY  = "hamaru_last_csv_name";
-const LAST_CSV_HASH_KEY  = "hamaru_last_csv_hash";
-const LAST_CSV_ITEMS_KEY = "hamaru_last_csv_items";
+(function(){
+  const __bind = () => {
+    try{ if(window.__HAMARU_BIND_DONE) return; window.__HAMARU_BIND_DONE = true; }catch(e){}
 
-function tryRestoreLastCsv(){
+  // Bind translate-language selector (robust): save + sync even if IDs differ
   try{
-    const itemsRaw = localStorage.getItem(LAST_CSV_ITEMS_KEY);
-    const name = localStorage.getItem(LAST_CSV_NAME_KEY) || "";
-    const hash = localStorage.getItem(LAST_CSV_HASH_KEY) || "";
-    if(!itemsRaw) return false;
-    const items = JSON.parse(itemsRaw);
-    if(!Array.isArray(items) || items.length < 4) return false;
+    const sel = findAnyTranslateChoiceSelect();
+    if(sel){
+      sel.addEventListener("change", ()=>{
+        try{ saveTranslateLang(sel.value); }catch(e){}
+        try{ syncTtsLangFromTranslateChoice(true); }catch(e){}
+      });
+    }
+  }catch(e){}
 
-    // Restore
-    CURRENT_CSV_NAME = name || "前回のCSV";
-    CURRENT_CSV_HASH = hash || "restored";
-    WORDS_ALL = items;
+    const customDeckPanel = document.getElementById("customDeckPanel");
+    const openCustomDeckBtn = document.getElementById("openCustomDeck");
+    const useCustomDeckQuickBtn = document.getElementById("useCustomDeckQuick");
+    const closeCustomDeckBtn = document.getElementById("closeCustomDeck");
 
-    // UI
-    try{ if (elCsvStatus) elCsvStatus.textContent = `現在のCSV: ${CURRENT_CSV_NAME}（${WORDS_ALL.length}語）`; }catch(e){}
-    try{ const el = document.getElementById("lastCsvStatus"); if(el) el.textContent = `✅ 前回のCSVを自動復元: ${CURRENT_CSV_NAME}`; }catch(e){}
-    return true;
+    const topSel = document.getElementById("customDeckLangChoiceTop");
+    const panelSel = document.getElementById("cd_langChoice");
+
+    // init selectors from saved value
+    try{
+      const v = (typeof loadTranslateLang === "function") ? loadTranslateLang() : "en";
+      if(topSel) topSel.value = v;
+      if(panelSel) panelSel.value = v;
+    }catch(e){}
+
+    try{ syncTtsLangFromTranslateChoice(true); }catch(e){}
+
+    // top selector change -> persist + sync panel + force write locale into lang fields
+    topSel?.addEventListener("change", (e) => {
+      const v = (e.target.value || "en").trim();
+      try{ if(typeof saveTranslateLang === "function") saveTranslateLang(v); }catch(err){}
+      try{ if(panelSel) panelSel.value = v; }catch(err){}
+      try{ if(typeof updateForeignLabel === "function") updateForeignLabel(); }catch(err){}
+      try{ if(typeof syncTtsLangFromTranslateChoice === "function") syncTtsLangFromTranslateChoice(true); }catch(err){}
+      try{ if(typeof updateLocalePreview === "function") updateLocalePreview(); }catch(err){}
+    });
+
+    // panel selector change -> persist + sync top + force write locale into lang fields
+    panelSel?.addEventListener("change", (e) => {
+      const v = (e.target.value || "en").trim();
+      try{ if(typeof saveTranslateLang === "function") saveTranslateLang(v); }catch(err){}
+      try{ if(topSel) topSel.value = v; }catch(err){}
+      try{ if(typeof updateForeignLabel === "function") updateForeignLabel(); }catch(err){}
+      try{ if(typeof syncTtsLangFromTranslateChoice === "function") syncTtsLangFromTranslateChoice(true); }catch(err){}
+      try{ if(typeof updateLocalePreview === "function") updateLocalePreview(); }catch(err){}
+    });
+
+    // Open / Close panel
+    openCustomDeckBtn?.addEventListener("click", () => {
+      // 先にパネルを開いて描画（スマホで「固まった」に見えないように）
+      try{ __cd_render_token++; }catch(e){}
+      try{
+        const st = document.getElementById("cd_status");
+        if(st) st.textContent = "読み込み中...";
+      }catch(e){}
+      try{
+        const tbody = document.getElementById("cd_list");
+        if(tbody) tbody.innerHTML = "";
+      }catch(e){}
+      try{ openOverlay(customDeckPanel); }catch(e){}
+      try{ cdSetExamplePlaceholder(); }catch(e){}
+
+      // keep UI choices (don't overwrite user's selection)
+      try{
+        const v = (typeof getChosenTranslateLang === "function") ? getChosenTranslateLang() : ((typeof loadTranslateLang==="function")?loadTranslateLang():"en");
+        try{ if(typeof saveTranslateLang === "function") saveTranslateLang(v); }catch(e){}
+        if(topSel) topSel.value = v;
+        if(panelSel) panelSel.value = v;
+      }catch(e){}
+
+      // 次の描画タイミングへ回して、UIを先に描かせる
+      requestAnimationFrame(()=>{
+        setTimeout(()=>{
+          try{ if(typeof renderCustomDeckPanel === "function") renderCustomDeckPanel(); }catch(e){}
+          try{ if(typeof clearCustomDeckForm === "function") clearCustomDeckForm(); }catch(e){}
+          try{ syncTtsLangFromTranslateChoice(true); }catch(e){}
+        }, 0);
+      });
+});
+
+    closeCustomDeckBtn?.addEventListener("click", () => {
+      try{ __cd_render_token++; }catch(e){}
+      try{ closeOverlay(customDeckPanel); }catch(e){}
+    });
+
+    // Quick apply button
+    useCustomDeckQuickBtn?.addEventListener("click", async () => {
+      try{ if(typeof useCustomDeck === "function") await useCustomDeck(); }catch(e){}
+    });
+
+    // lang preset select -> fill lang input (always set, since user wants auto)
+    document.getElementById("cd_lang_select")?.addEventListener("change", (e) => {
+      const v = (e.target.value || "").trim();
+      const inp = document.getElementById("cd_lang");
+      if(inp) inp.value = v;
+    });
+
+    // Clear button
+    document.getElementById("cd_clear")?.addEventListener("click", () => {
+      try{ if(typeof clearCustomDeckForm === "function") clearCustomDeckForm(); }catch(e){}
+      try{ if(typeof syncTtsLangFromTranslateChoice === "function") syncTtsLangFromTranslateChoice(true); }catch(e){}
+      try{ if(typeof updateLocalePreview === "function") updateLocalePreview(); }catch(e){}
+    });
+
+    // Add/Update button
+    document.getElementById("cd_add")?.addEventListener("click", async () => {
+      try{ await upsertCustomDeckFromForm(); }catch(e){ cdDebug("JSエラー: " + (e?.message||e)); }
+    });
+
+    // Export CSV
+    document.getElementById("cd_export")?.addEventListener("click", () => {
+      const arr = loadCustomDeck();
+      if(!arr.length){ alert("まだ単語がありません"); return; }
+      const csv = buildCustomCsvText(arr);
+      downloadTextFile(csv, "custom_deck.csv", "text/csv");
+      const st = document.getElementById("cd_status");
+      if(st) st.textContent = "✅ CSVを書き出しました";
+    });
+
+    // Use this custom deck
+    document.getElementById("cd_use")?.addEventListener("click", async () => {
+      try{ await useCustomDeck(); }catch(e){}
+      try{ closeOverlay(customDeckPanel); }catch(e){}
+    });
+
+    // Reset custom deck
+    document.getElementById("cd_reset")?.addEventListener("click", () => {
+      if(!confirm("自作単語帳をすべて削除します。よろしいですか？")) return;
+      saveCustomDeck([]);
+      renderCustomDeckPanel();
+      renderCustomDeckHint();
+      clearCustomDeckForm();
+      const st = document.getElementById("cd_status");
+      if(st) st.textContent = "🧹 全削除しました";
+    });
+
+    // Auto translate on blur (optional)
+    const __enEl = document.getElementById("cd_en");
+    const __jaEl = document.getElementById("cd_ja");
+    __enEl?.addEventListener("blur", async () => {
+      try{
+        if(!document.getElementById("cd_autoTranslate")?.checked) return;
+        const en = (__enEl.value||"").trim();
+        const ja = (__jaEl.value||"").trim();
+        if(en && !ja && typeof translateTextOnline === "function"){
+          const v = (typeof loadTranslateLang === "function") ? loadTranslateLang() : "en";
+          const t = await translateTextOnline(en, v, "ja");
+          __jaEl.value = t;
+        }
+      }catch(e){}
+    });
+    __jaEl?.addEventListener("blur", async () => {
+      try{
+        if(!document.getElementById("cd_autoTranslate")?.checked) return;
+        const ja = (__jaEl.value||"").trim();
+        const en = (__enEl.value||"").trim();
+        if(ja && !en && typeof translateTextOnline === "function"){
+          const v = (typeof loadTranslateLang === "function") ? loadTranslateLang() : "en";
+          const t = await translateTextOnline(ja, "ja", v);
+          __enEl.value = t;
+        }
+      }catch(e){}
+    });
+
+    // Failsafe: whenever focusing inputs, re-sync locale
+    __enEl?.addEventListener("focus", ()=>{ 
+      try{ if(typeof syncTtsLangFromTranslateChoice === "function") syncTtsLangFromTranslateChoice(true); }catch(e){}
+      try{ if(typeof updateLocalePreview === "function") updateLocalePreview(); }catch(e){}
+    });
+    __jaEl?.addEventListener("focus", ()=>{ 
+      try{ if(typeof syncTtsLangFromTranslateChoice === "function") syncTtsLangFromTranslateChoice(true); }catch(e){}
+      try{ if(typeof updateLocalePreview === "function") updateLocalePreview(); }catch(e){}
+    });
+  
+
+    // Auto Lv (CEFR-J)
+    try{ installCustomDeckAutoLv(); }catch(e){}
+    try{ updateCdAutoLvHint(true); }catch(e){}
+
+  };
+  try{
+    if(document.readyState === "loading"){
+      window.addEventListener("DOMContentLoaded", __bind, { once:true });
+    }else{
+      __bind();
+    }
+    window.addEventListener("pageshow", () => { try{ __bind(); }catch(e){} });
+  }catch(e){}
+})();
+
+
+// =========================
+// Custom Deck (in-app editor)
+// =========================
+
+const CUSTOM_TRANSLATE_LANG_KEY = "hamaru_custom_translate_lang"; // stores: en/fr/it/de/es/ko/zh-TW/zh-CN
+function loadTranslateLang(){
+  try{ return localStorage.getItem(CUSTOM_TRANSLATE_LANG_KEY) || "en"; }catch(e){ return "en"; }
+}
+function saveTranslateLang(v){
+  try{ localStorage.setItem(CUSTOM_TRANSLATE_LANG_KEY, v); }catch(e){}
+}
+
+function getChosenTranslateLang(){
+  // Prefer current UI selection (even if localStorage wasn't updated yet)
+  try{
+    const top = document.getElementById("customDeckLangChoiceTop");
+    if(top && top.value) return top.value.trim();
+  }catch(e){}
+  try{
+    const sel = document.getElementById("cd_langChoice");
+    if(sel && sel.value) return sel.value.trim();
+  }catch(e){}
+  try{ return loadTranslateLang(); }catch(e){ return "en"; }
+}
+
+function cdSetExamplePlaceholder(){
+  try{
+    const lang = (typeof getChosenTranslateLang==="function") ? getChosenTranslateLang() : "en";
+    const map = {
+      "en":"example",
+      "fr":"exemple",
+      "it":"esempio",
+      "de":"Beispiel",
+      "es":"ejemplo",
+      "ko":"예",
+      "zh-TW":"例子",
+      "zh-CN":"例子"
+    };
+    const ex = map[lang] || "example";
+    const el = document.getElementById("cd_en");
+    if(el){
+      // 入力が空ならプレースホルダーを言語に合わせる（入力中は触らない）
+      if(!el.value.trim()) el.placeholder = ex;
+    }
+  }catch(e){}
+}
+
+function getLocaleForTts(lang){
+  // map translation lang -> likely TTS locale used in your game
+  const map = {
+    "en": "en-US",
+    "fr": "fr-FR",
+    "it": "it-IT",
+    "de": "de-DE",
+    "es": "es-ES",
+    "ko": "ko-KR",
+    "zh-TW": "zh-TW",
+    "zh-CN": "zh-CN"
+  };
+  return map[lang] || "en-US";
+}
+
+function getLangPairForDeck(choice){
+  // The app's lang column uses "FOREIGN_LOCALE/ja-JP" (e.g., fr-FR/ja-JP, ko-KR/ja-JP)
+  const loc = getLocaleForTts(choice);
+  return `${loc}/ja-JP`;
+}
+
+
+let __updatingLocalePreview=false;
+
+function updateLocalePreview(){
+  if(__updatingLocalePreview) return;
+  __updatingLocalePreview=true;
+  try{
+    const choice = getChosenTranslateLang();
+    const loc = getLocaleForTts(choice);
+    const el = document.getElementById("cd_localePreview");
+    if(el) el.textContent = loc;
+    try{ const t=document.getElementById('customDeckLocalePreviewTop'); if(t) t.textContent = loc; }catch(e){}
+  }catch(e){} 
+  finally{ __updatingLocalePreview=false; }
+}
+
+function updateForeignLabel(){
+  const choice = getChosenTranslateLang();
+  const label = {
+    "en":"英語","fr":"フランス語","it":"イタリア語","de":"ドイツ語","es":"スペイン語","ko":"韓国語","zh-TW":"中国語(繁体)","zh-CN":"中国語(簡体)"
+  }[choice] || "外国語";
+  // Update placeholder hints (keep ids)
+  try{ document.querySelector('label[for="cd_en"]'); }catch(e){}
+
+
+
+
+
+
+
+function syncTtsLangFromTranslateChoice(force=true){
+  // v77: 軽量版（スマホで固まりにくいようにDOM総なめ探索をやめる）
+  try{
+    const choice = (typeof getChosenTranslateLang==="function")
+      ? getChosenTranslateLang()
+      : ((typeof loadTranslateLang==="function") ? loadTranslateLang() : "en");
+
+    const locPair = (typeof getLangPairForDeck==="function")
+      ? getLangPairForDeck(choice)
+      : `${getLocaleForTts(choice)}/ja-JP`;
+
+    // previews
+    try{
+      const t1 = document.getElementById("customDeckLocalePreviewTop");
+      if(t1) t1.textContent = locPair;
+      const t2 = document.getElementById("customDeckLocalePreview");
+      if(t2) t2.textContent = locPair;
+      const t3 = document.getElementById("cd_localePreview");
+      if(t3) t3.textContent = locPair;
+    }catch(e){}
+
+    // direct targets (IDs are stable in this build)
+    const sel = document.getElementById("cd_lang_select");
+    if(sel){
+      if(force || !sel.value) sel.value = locPair;
+      try{ sel.dispatchEvent(new Event("change", {bubbles:true})); }catch(e){}
+    }
+
+    const inp = document.getElementById("cd_lang");
+    if(inp){
+      if(force) inp.value = locPair;
+      else if(!inp.value.trim()) inp.value = locPair;
+      inp.placeholder = `カスタム（例: ${locPair}）`;
+      try{ inp.dispatchEvent(new Event("input", {bubbles:true})); }catch(e){}
+      try{ inp.dispatchEvent(new Event("change", {bubbles:true})); }catch(e){}
+    }
+  }catch(e){}
+}
+
+
+
+
+
+  try{
+    const enEl = document.getElementById("cd_en");
+    if(enEl && !enEl.value.trim()){
+      enEl.placeholder = `${label}（例）`;
+    }
+  }catch(e){}
+}
+
+
+async function translateTextOnline(text, from, to){
+  // Public endpoint (no key). Rate limits/accuracy may vary.
+  const q = encodeURIComponent(text);
+  const url = `https://api.mymemory.translated.net/get?q=${q}&langpair=${encodeURIComponent(from)}|${encodeURIComponent(to)}`;
+  const res = await fetch(url, {method:"GET"});
+  if(!res.ok) throw new Error("translate failed");
+  const data = await res.json();
+  const t = data?.responseData?.translatedText;
+  if(!t) throw new Error("no translation");
+  return t;
+}
+
+const CUSTOM_DECK_KEY = "hamaru_custom_deck_v68";
+
+function loadCustomDeck(){
+  try{
+    const raw = localStorage.getItem(CUSTOM_DECK_KEY);
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr : [];
   }catch(e){
-    return false;
+    return [];
+  }
+}
+function saveCustomDeck(arr){
+  try{ localStorage.setItem(CUSTOM_DECK_KEY, JSON.stringify(arr)); }catch(e){}
+}
+function normalizeBoolStr(v){
+  const s = (v||"").toString().trim().toLowerCase();
+  if(!s) return "";
+  if(["1","true","t","yes","y","on"].includes(s)) return "true";
+  if(["0","false","f","no","n","off"].includes(s)) return "false";
+  return s; // そのまま
+}
+function cdEscapeCsv(val){
+  const s = (val ?? "").toString();
+  if(/[",\n]/.test(s)) return '"' + s.replace(/"/g,'""') + '"';
+  return s;
+}
+function buildCustomCsvText(items){
+  const header = ["en","ja","level","lang","tts"].join(",") + "\n";
+  const lines = items.map(it => {
+    const en = cdEscapeCsv(it.en||"");
+    const ja = cdEscapeCsv(it.ja||"");
+    const lv = cdEscapeCsv(it.level||"");
+    const lang = cdEscapeCsv(it.lang||"");
+    const tts = cdEscapeCsv(it.tts||"");
+    return [en,ja,lv,lang,tts].join(",");
+  });
+  return header + lines.join("\n") + "\n";
+}
+
+function renderCustomDeckHint(){
+  try{
+    const arr = loadCustomDeck();
+    const el = document.getElementById("customDeckHint");
+    if(el) el.textContent = arr.length ? `登録済み: ${arr.length}語` : "まだ単語がありません（開いて追加してください）";
+  }catch(e){}
+}
+
+// ---- custom deck list rendering (chunked + delegated events) ----
+let __cd_cache = [];
+let __cd_bound = false;
+let __cd_render_token = 0; // 描画キャンセル用
+
+function __cd_escape(s){
+  return (s||"").toString().replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+
+function renderCustomDeckPanel(){
+  // 途中で閉じたら描画を止める
+  __cd_render_token++;
+  const token = __cd_render_token;
+
+  const arr = loadCustomDeck();
+  __cd_cache = Array.isArray(arr) ? arr : [];
+
+  const tbody = document.getElementById("cd_list");
+  const elCount = document.getElementById("cd_count");
+  const elStatus = document.getElementById("cd_status");
+
+  if(elCount) elCount.textContent = `${__cd_cache.length}語`;
+
+  // 初期ステータス
+  if(elStatus){
+    elStatus.textContent = __cd_cache.length ? "準備OK" : "まず en/ja を追加してね";
+  }
+  if(!tbody) return;
+
+  // イベントは1回だけ（大量データでも固まらない）
+  if(!__cd_bound){
+    __cd_bound = true;
+    tbody.addEventListener("click", (ev)=>{
+      const t = ev.target;
+      const editBtn = t?.closest?.("[data-cd-edit]");
+      const delBtn  = t?.closest?.("[data-cd-del]");
+
+      if(editBtn){
+        const i = Number(editBtn.getAttribute("data-cd-edit"));
+        const a = loadCustomDeck();
+        const it = a[i];
+        if(!it) return;
+
+        document.getElementById("cd_en").value = it.en||"";
+        document.getElementById("cd_ja").value = it.ja||"";
+        document.getElementById("cd_level").value = it.level||"";
+        document.getElementById("cd_lang").value = it.lang||"";
+        try{ const sel=document.getElementById("cd_lang_select"); if(sel){ sel.value = (it.lang||""); } }catch(e){}
+        try{ document.getElementById("cd_tts").value = (it.tts||"").toString().toLowerCase(); }catch(e){}
+        document.getElementById("cd_editIndex").value = String(i);
+
+        const st = document.getElementById("cd_status");
+        if(st) st.textContent = `編集モード: #${i+1}`;
+        return;
+      }
+
+      if(delBtn){
+        const i = Number(delBtn.getAttribute("data-cd-del"));
+        if(!confirm(`#${i+1} を削除しますか？`)) return;
+        const a = loadCustomDeck();
+        a.splice(i,1);
+        saveCustomDeck(a);
+        renderCustomDeckPanel();
+        renderCustomDeckHint();
+        return;
+      }
+    });
+  }
+
+  // まず空に
+  tbody.innerHTML = "";
+
+  // 大量でも固まらないように分割描画
+  const CHUNK = 100; // 1回に描く行数（重い端末向けに控えめ）
+  let idx = 0;
+  // 新しい単語を上に表示（見失い防止）
+  const __cd_order = __cd_cache.map((_,i)=>i).reverse();
+
+  const renderChunk = ()=>{
+    if(token !== __cd_render_token) return; // キャンセル
+    const end = Math.min(idx + CHUNK, __cd_order.length);
+    let out = "";
+    for(; idx < end; idx++){
+      const real = __cd_order[idx];
+      const it = __cd_cache[real] || {};
+      const en = __cd_escape(it.en);
+      const ja = __cd_escape(it.ja);
+      const lv = (it.level ?? "");
+      const lang = __cd_escape(it.lang);
+      out += `
+        <tr>
+          <td style="padding:6px;border-bottom:1px solid rgba(255,255,255,.08);">${en}</td>
+          <td style="padding:6px;border-bottom:1px solid rgba(255,255,255,.08);">${ja}</td>
+          <td style="padding:6px;text-align:right;border-bottom:1px solid rgba(255,255,255,.08);">${lv}</td>
+          <td style="padding:6px;border-bottom:1px solid rgba(255,255,255,.08);">${lang}</td>
+          <td style="padding:6px;border-bottom:1px solid rgba(255,255,255,.08);">
+            <button class="btn smallbtn" type="button" data-cd-edit="${real}">編集</button>
+            <button class="btn smallbtn" type="button" data-cd-del="${real}">削除</button>
+          </td>
+        </tr>
+      `;
+    }
+    if(out) tbody.insertAdjacentHTML("beforeend", out);
+
+    if(idx < __cd_order.length){
+      if(elStatus) elStatus.textContent = `表示中... ${idx}/${__cd_order.length}語`;
+      requestAnimationFrame(renderChunk);
+    }else{
+      if(elStatus) elStatus.textContent = __cd_cache.length ? "準備OK" : "まず en/ja を追加してね";
+      // 追加/更新直後: その行へ自動スクロール（見失い防止）
+      try{
+        const sidx = window.__cd_scroll_to_index;
+        if(Number.isFinite(sidx)){
+          const btn = tbody.querySelector(`[data-cd-edit="${sidx}"]`);
+          const tr = btn ? btn.closest('tr') : null;
+          if(btn) btn.scrollIntoView({block:'center'});
+          if(tr){ tr.style.outline='2px solid rgba(56,217,150,.9)'; tr.style.outlineOffset='-2px';
+            setTimeout(()=>{ try{ tr.style.outline=''; tr.style.outlineOffset=''; }catch(e){} }, 1200);
+          }
+          window.__cd_scroll_to_index = null;
+        }
+       }catch(e){}
+
+    }
+  };
+
+  // 0件なら即終了
+  if(__cd_cache.length === 0) return;
+
+  // まず状態を出してから描画開始
+  if(elStatus) elStatus.textContent = `表示準備... 0/${__cd_cache.length}語`;
+  requestAnimationFrame(renderChunk);
+}
+
+
+function clearCustomDeckForm(){
+  document.getElementById("cd_en").value = "";
+  document.getElementById("cd_ja").value = "";
+  const __lvEl = document.getElementById("cd_level");
+  if(__lvEl){ __lvEl.value = ""; __lvEl.dataset.autoFilled="0"; }
+  try{ document.getElementById("cd_tts").value = ""; }catch(e){}
+  try{ const h=document.getElementById("cd_lvHint"); if(h) h.textContent=""; }catch(e){}
+  document.getElementById("cd_editIndex").value = "-1";
+  const st = document.getElementById("cd_status");
+  if(st) st.textContent = "入力して追加しよう";
+  try{ if(typeof syncTtsLangFromTranslateChoice==="function") syncTtsLangFromTranslateChoice(true); }catch(e){}
+
+}
+
+async function upsertCustomDeckFromForm(){
+  const elEn = document.getElementById("cd_en");
+  const elJa = document.getElementById("cd_ja");
+  const elLv = document.getElementById("cd_level");
+  const elLang = document.getElementById("cd_lang");
+  const elTts = document.getElementById("cd_tts");
+  const elAuto = document.getElementById("cd_autoTranslate");
+  const elEdit = document.getElementById("cd_editIndex");
+
+  const en = (elEn?.value || "").trim();
+  let ja = (elJa?.value || "").trim();
+  let level = clamp(Number((elLv?.value || "").trim() || 1) || 1, 1, 99);
+  const autoLv = !!document.getElementById("cd_autoLevel")?.checked;
+  let lang = (elLang?.value || "").trim();
+  const tts = normalizeBoolStr(elTts?.value || "");
+  const auto = !!elAuto?.checked;
+
+  if(!en){ alert("外国語（選んだ言語）を入れてね"); return; }
+
+  // 自動翻訳（jaが空の時だけ）
+  if(auto && !ja){
+    try{
+      const choice = (typeof getChosenTranslateLang==="function") ? getChosenTranslateLang() : ((typeof loadTranslateLang==="function")?loadTranslateLang():"en");
+      // "en" / "fr" など（MyMemoryは言語コード想定）
+      const from = (choice || "en").toString().split("-")[0];
+      ja = await translateTextOnline(en, from, "ja");
+      if(elJa) elJa.value = ja;
+    }catch(e){
+      alert("自動翻訳に失敗しました。日本語を手入力してね。");
+    }
+  }
+
+  if(!ja){ alert("日本語（ja）を入れてね"); return; }
+
+  // 自動Lv（CEFR-J）: 見つかったらLv1〜5を提案（手入力がない/自動入力の時だけ上書き）
+  if(autoLv){
+    try{
+      const sug = suggestLevelFromCEFRJ(en);
+      if(sug){
+        const canOverwrite = (!elLv?.value) || (elLv?.dataset?.autoFilled === "1");
+        if(canOverwrite){
+          level = sug;
+          if(elLv){ elLv.value = String(sug); elLv.dataset.autoFilled = "1"; }
+        }
+      }
+      try{ updateCdAutoLvHint(false); }catch(e){}
+    }catch(e){}
+  }
+
+  // lang が空なら、選択中の推奨ロケールを入れる
+  if(!lang){
+    try{
+      const choice = (typeof getChosenTranslateLang==="function") ? getChosenTranslateLang() : ((typeof loadTranslateLang==="function")?loadTranslateLang():"en");
+      const loc = (typeof getLocaleForTts==="function") ? getLocaleForTts(choice) : "";
+      lang = (loc || "").trim();
+      if(elLang) elLang.value = lang;
+      try{ const sel=document.getElementById("cd_lang_select"); if(sel && lang) sel.value = lang; }catch(e){}
+    }catch(e){}
+  }
+
+  const idx = Number(elEdit?.value || "-1");
+  const arr = loadCustomDeck();
+  const item = { en, ja, level, lang, tts };
+
+  if(Number.isFinite(idx) && idx >= 0 && idx < arr.length){
+    arr[idx] = item;
+  }else{
+    arr.push(item);
+  }
+
+  saveCustomDeck(arr);
+  // 追加/更新した行が見えるようにスクロール対象を記録
+  try{
+    const __idx = (Number.isFinite(idx) && idx >= 0 && idx < arr.length) ? idx : (arr.length - 1);
+    window.__cd_scroll_to_index = __idx;
+  }catch(e){}
+  renderCustomDeckPanel();
+  renderCustomDeckHint();
+  clearCustomDeckForm();
+
+  const st = document.getElementById("cd_status");
+  if(st) st.textContent = "✅ 反映しました";
+}
+
+function downloadTextFile(text, filename, mime){
+  try{
+    const blob = new Blob([text], {type: mime || "text/plain"});
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = filename || "download.txt";
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(()=>{ try{ URL.revokeObjectURL(a.href); }catch(e){}; a.remove(); }, 0);
+  }catch(e){
+    alert("ダウンロードに失敗しました");
   }
 }
 
-function forgetLastCsv(){
-  try{
-    localStorage.removeItem(LAST_CSV_ITEMS_KEY);
-    localStorage.removeItem(LAST_CSV_NAME_KEY);
-    localStorage.removeItem(LAST_CSV_HASH_KEY);
-  }catch(e){}
-  try{
-    const el = document.getElementById("lastCsvStatus");
-    if(el) el.textContent = "前回CSVを忘れました（内蔵データに戻します）";
-  }catch(e){}
-  // 内蔵へ戻すにはリロードが一番確実（状態/タイマー/ロックが絡むため）
-  try{ location.reload(); }catch(e){}
-}
+
+async function useCustomDeck(){
+  const arr = loadCustomDeck();
+  if(arr.length < 4){
+    alert("自作単語帳は4語以上あるとゲームできます（4択のため）");
+    return;
+  }
+  // build stable hash
+  const csvText = buildCustomCsvText(arr);
+  const h = await sha256Hex("custom::" + csvText);
+
+  // map to game items
+  const items = arr.map(it=>({
+    en: (it.en||"").trim(),
+    ja: (it.ja||"").trim(),
+    level: (Number(it.level||0)||1),
+    lang: (it.lang||"").trim(),
+    en_lang: "",
+    ja_lang: "",
+    tts: (it.tts||"").toString().trim()
+  }));
+
+  CURRENT_CSV_NAME = "自作単語帳";
+  CURRENT_CSV_HASH = h;
+  WORDS_ALL = items;
 
 
-// 復元したCSVに合わせて、デッキ/成績/復習/学習ログ/UIをまとめて再同期
-function restoreAllFromLastCsvIfNeeded(){
-  const before = CURRENT_CSV_HASH;
-  const restored = tryRestoreLastCsv();
-  if(!restored) return false;
-
-  // ここで CURRENT_CSV_HASH / WORDS_ALL / CURRENT_CSV_NAME が復元済み
-  try{ applyDeckFilter(); }catch(e){}
+  // 自作単語帳を使う時は、古い復習セットが残って出題0になるのを防ぐ
+  try{ if (elReviewMode) elReviewMode.value = "off"; }catch(e){}
   try{ REVIEW_SET = []; }catch(e){}
-  try{ loadReviewFromStorage(); }catch(e){}
-  try{ loadStatsFromStorage(); }catch(e){}
-  try{ updateReviewStatus(); }catch(e){}
-  try{ if (typeof renderLangFilterOptions === "function") renderLangFilterOptions(); }catch(e){}
-  try{ loadDailyForCurrent(); }catch(e){}
 
-  // HUD更新
-  try{ renderHud(); }catch(e){}
-  return true;
+
+  // Last CSVとしても保存（戻る/再起動でも復元）
+  try{
+    localStorage.setItem(LAST_CSV_NAME_KEY, CURRENT_CSV_NAME);
+    localStorage.setItem(LAST_CSV_HASH_KEY, CURRENT_CSV_HASH);
+    localStorage.setItem(LAST_CSV_ITEMS_KEY, JSON.stringify(items));
+  }catch(e){}
+
+  // Resync
+  applyDeckFilter();
+  REVIEW_SET = [];
+  loadReviewFromStorage();
+  loadStatsFromStorage();
+  updateReviewStatus();
+  loadDailyForCurrent();
+  renderDailyUI();
+  renderHud();
+  resetGame();
+
+  const st = document.getElementById("cd_status");
+  if(st) st.textContent = `✅ 自作単語帳を適用: ${items.length}語`;
+  renderCustomDeckHint();
 }
 
 // =========================
@@ -3052,6 +4056,30 @@ function restoreAllFromLastCsvIfNeeded(){
       });
     }
   } catch(e) { console.error(e); }
+  // =========================
+  // Auto-start first question (v74)
+  // =========================
+  function autoStartIfBlank(tag){
+    try{
+      const p = document.getElementById("prompt");
+      const ch = document.getElementById("choices");
+      const restart = document.getElementById("restart");
+      const promptTxt = (p?.textContent||"").trim();
+      const hasChoices = !!(ch && ch.querySelector("button.choice"));
+      // If nothing is shown yet, trigger the same path as the Restart button.
+      if((promptTxt === "---" || promptTxt === "") && !hasChoices && restart){
+        restart.click();
+      }
+    }catch(e){}
+  }
+  // Run multiple times for timing + bfcache.
+  setTimeout(()=>autoStartIfBlank("t200"), 200);
+  setTimeout(()=>autoStartIfBlank("t800"), 800);
+  setTimeout(()=>autoStartIfBlank("t1600"), 1600);
+  window.addEventListener("pageshow", ()=>setTimeout(()=>autoStartIfBlank("pageshow"), 50));
+  window.addEventListener("visibilitychange", ()=>{ if(!document.hidden) setTimeout(()=>autoStartIfBlank("vis"), 50); });
+
+
 
   renderHud();
   resetGame();
@@ -3102,6 +4130,141 @@ setVh();
 addEventListener('resize', setVh);
 addEventListener('orientationchange', setVh);
 
+  // (removed MutationObserver auto-sync: it could trigger heavy loops on some devices)
+
+
+  // =========================
+  // Auto start (smartphone/bfcache safe)
+  // =========================
+  function ensureStarted(){
+    try{
+      const p = document.getElementById("prompt");
+      const ch = document.getElementById("choices");
+      const promptTxt = (p?.textContent||"").trim();
+      const hasChoices = !!(ch && ch.querySelector("button.choice"));
+      if(!hasChoices || promptTxt === "---" || promptTxt === ""){
+        if(typeof resetGame === "function") resetGame();
+      }
+    }catch(e){}
+  }
+
+  window.addEventListener("load", ()=>{ 
+    setTimeout(ensureStarted, 0);
+    setTimeout(ensureStarted, 500);
+  });
+  window.addEventListener("pageshow", ()=>{ 
+    setTimeout(ensureStarted, 0);
+    setTimeout(ensureStarted, 300);
+  });
+  document.addEventListener("visibilitychange", ()=>{ 
+    if(!document.hidden) setTimeout(ensureStarted, 200);
+  });
+  document.addEventListener("pointerdown", ensureStarted, { once:true });
+
 </script>
+
+<!-- 自作単語帳（Custom Deck） -->
+<div id="customDeckPanel" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.55); padding:18px; z-index:9999; overflow:auto;">
+  <div class="card" style="max-width:980px;margin:0 auto;">
+    <div class="inline" style="justify-content:space-between;align-items:center;">
+      <h1 style="font-size:16px;margin:0;">自作単語帳</h1>
+      <select id="cd_langChoice" style="min-width:220px; max-width:420px;" onchange="try{saveTranslateLang(this.value);}catch(e){} try{updateForeignLabel();}catch(e){} try{syncTtsLangFromTranslateChoice(true);}catch(e){} try{cdSetExamplePlaceholder();}catch(e){}">
+        <option value="en">英語（en）</option>
+        <option value="fr">フランス語（fr）</option>
+        <option value="it">イタリア語（it）</option>
+        <option value="de">ドイツ語（de）</option>
+        <option value="es">スペイン語（es）</option>
+        <option value="ko">韓国語（ko）</option>
+        <option value="zh-TW">中国語（繁体, zh-TW）</option>
+        <option value="zh-CN">中国語（簡体, zh-CN）</option>
+      </select>
+      <button class="btn smallbtn" type="button" id="closeCustomDeck" style="margin-left:auto;">閉じる</button>
+    </div>
+<div class="spacer"></div>
+    <div class="cd-layout">
+      <div class="cd-left">
+        <div class="cd-row">
+                <div class="cd-field">
+                  <div class="small" style="margin-bottom:4px;opacity:.9;">外国語（選んだ言語）*</div>
+                  <input id="cd_en" placeholder="example" style="width:100%;">
+                </div>
+                <div class="cd-field">
+                  <div class="small" style="margin-bottom:4px;opacity:.9;">日本語（ja）*</div>
+                  <input id="cd_ja" placeholder="例：例文" style="width:100%;">
+                </div>
+              </div>
+
+              <div class="cd-row" style="margin-top:10px;">
+                <div class="cd-field small">
+                  <div class="small" style="margin-bottom:4px;opacity:.9;">Lv</div>
+                  <input id="cd_level" placeholder="2" style="width:100%;">
+                </div>
+
+                <div style="margin-top:8px;display:flex;gap:8px;align-items:center;">
+                  <input type="checkbox" id="cd_autoLevel" style="width:18px;height:18px;">
+                  <span class="small" style="opacity:.95;">自動Lv（CEFR-J / 1〜5）</span>
+                </div>
+                <div id="cd_lvHint" class="small" style="margin-top:6px;opacity:.85;"></div>
+
+
+                <div class="cd-field mid">
+                  <div class="small" style="margin-bottom:4px;opacity:.9;">lang（選択）</div>
+                  <select id="cd_lang_select" style="width:100%;">
+                    <option value="">（空）</option>
+                    <option value="en-US/ja-JP">en-US/ja-JP</option>
+                    <option value="fr-FR/ja-JP">fr-FR/ja-JP</option>
+                    <option value="it-IT/ja-JP">it-IT/ja-JP</option>
+                    <option value="de-DE/ja-JP">de-DE/ja-JP</option>
+                    <option value="es-ES/ja-JP">es-ES/ja-JP</option>
+                    <option value="ko-KR/ja-JP">ko-KR/ja-JP</option>
+                    <option value="zh-TW/ja-JP">zh-TW/ja-JP</option>
+                    <option value="zh-CN/ja-JP">zh-CN/ja-JP</option>
+                    <option value="ja-JP/en-US">ja-JP/en-US</option>
+</select>
+                  <div class="cd-note" style="margin-top:4px;">自分で入れたい場合は下の欄に直接入力もOK</div>
+                  <input id="cd_lang" placeholder="カスタム（例: en-US）" style="width:100%; margin-top:6px;">
+                </div>
+
+                <div class="cd-field small">
+                  <div class="small" style="margin-bottom:4px;opacity:.9;">tts</div>
+                  <select id="cd_tts" style="width:100%;">
+                    <option value="">（空）</option>
+                    <option value="true">1 / true</option>
+                    <option value="false">0 / false</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="cd-row" style="margin-top:12px;">
+                <label class="pill" style="display:flex;gap:8px;align-items:center;user-select:none;">
+                  <input type="checkbox" id="cd_autoTranslate" style="width:18px;height:18px;">
+                  <span class="small" style="opacity:.95;">自動翻訳（オンライン）</span>
+                </label>
+                <span class="cd-note">※通信が必要。精度は保証できないので最終確認してね。</span>
+              </div>
+
+              <div class="cd-actions" style="margin-top:12px;">
+                <button class="btn smallbtn primary" type="button" id="cd_add">追加/更新</button>
+                <button class="btn smallbtn half" type="button" id="cd_clear">入力クリア</button>
+                <button class="btn smallbtn half" type="button" id="cd_export">CSVを書き出し</button>
+                <button class="btn smallbtn" type="button" id="cd_use">この自作単語帳で学習</button>
+                <button class="btn smallbtn danger" type="button" id="cd_reset">全削除</button>
+              </div>
+
+              <input type="hidden" id="cd_editIndex" value="-1">
+              <div class="small" id="cd_status" style="margin-top:10px; opacity:.9;"></div>
+      </div>
+      <div class="cd-right">
+        <div class="cardlike">
+          <div style="overflow:auto;">
+            <table style="width:100%; border-collapse:collapse;">
+              <tbody id="cd_list"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 </body>
 </html>
