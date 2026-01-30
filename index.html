@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>HAMARU風 単語4択（CSV/復習/周回/結果/音声/切替）</title>
+  <title>単語塾(仮) 単語4択（CSV/復習/周回/結果/音声/切替）</title>
   <style>
     :root { --bg:#0b1020; --card:#121a33; --text:#e8eeff; --muted:#a9b3d6; --good:#38d996; --bad:#ff5c7a; }
 /* まず安全な高さ基準を作る */
@@ -238,7 +238,7 @@ html, body{ height:auto; }
   <div class="wrap">
     <div class="row">
       <div class="card" style="flex: 1 1 600px;">
-        <h1>HAMARU風 単語4択（CSV/復習/周回/結果/音声/切替）</h1>
+        <h1>単語塾(仮) 単語4択（CSV/復習/周回/結果/音声/切替）</h1>
 
         <div class="hud">
           <div class="pill">スコア: <b id="score">0</b></div>
@@ -4214,7 +4214,7 @@ function updateTtsHud(){
     pill.textContent = "🎙 音声: 未使用";
     pill.classList.add("free");
   }else if(lock.id === TAB_ID){
-    pill.textContent = "🎙 音声: しゃべれる";
+    pill.textContent = "🎙 音声: 使用中";
     pill.classList.add("active");
   }else{
     pill.textContent = "🎙 音声: 待機中";
